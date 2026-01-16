@@ -1,0 +1,113 @@
+# Security policies and configurations
+
+api_security:
+  authentication:
+    type: jwt
+    secret_key: ${JWT_SECRET}
+    algorithm: HS256
+    token_expiry: 3600  # 1 hour
+    refresh_token_expiry: 604800  # 7 days
+
+  rate_limiting:
+    default:
+      requests_per_minute: 60
+      requests_per_hour: 1000
+    endpoints:
+      /predict:
+        requests_per_minute: 100
+        requests_per_hour: 5000
+      /predict/batch:
+        requests_per_minute: 20
+        requests_per_hour: 500
+
+  ip_whitelist:
+    enabled: false
+    allowed_ips:
+      - 10.0.0.0/8
+      - 172.16.0.0/12
+      - 192.168.0.0/16
+
+  cors:
+    enabled: true
+    allowed_origins:
+      - https://example.com
+      - https://app.example.com
+    allowed_methods:
+      - GET
+      - POST
+      - OPTIONS
+    allowed_headers:
+      - Content-Type
+      - Authorization
+    max_age: 3600
+
+  input_validation:
+    max_request_size: 10485760  # 10MB
+    max_batch_size: 1000
+    max_features: 100
+    feature_value_range:
+      min: -1000000
+      max: 1000000
+
+  encryption:
+    data_at_rest: true
+    data_in_transit: true
+    algorithm: AES-256-GCM
+
+  audit_logging:
+    enabled: true
+    log_level: INFO
+    log_predictions: true
+    log_errors: true
+    retention_days: 90
+
+network_policies:
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: ml-models
+      ports:
+        - protocol: TCP
+          port: 5000
+
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: monitoring
+      ports:
+        - protocol: TCP
+          port: 9090
+
+secrets_management:
+  provider: kubernetes
+  rotation_period: 30  # days
+  secrets:
+    - name: database-credentials
+      type: postgresql
+    - name: storage-credentials
+      type: s3
+    - name: api-keys
+      type: generic
+
+compliance:
+  gdpr:
+    enabled: true
+    data_retention_days: 365
+    anonymization: true
+    right_to_deletion: true
+
+  pci_dss:
+    enabled: false
+    
+  hipaa:
+    enabled: false
+
+vulnerability_scanning:
+  enabled: true
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  scanners:
+    - trivy
+    - snyk
+    - owasp-dependency-check

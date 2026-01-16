@@ -1,0 +1,149 @@
+name: ML Pipeline
+
+on:
+  schedule:
+    - cron: '0 0 * * 0'  # Weekly on Sunday
+  workflow_dispatch:
+    inputs:
+      deploy_strategy:
+        description: 'Deployment strategy'
+        required: true
+        default: 'canary'
+        type: choice
+        options:
+          - blue_green
+          - canary
+          - ab_test
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    outputs:
+      model_version: ${{ steps.train.outputs.version }}
+      
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+    
+    - name: Download training data
+      run: |
+        # Download latest training data from S3 or other source
+        aws s3 cp s3://data-bucket/training_data.csv data/
+    
+    - name: Train model
+      id: train
+      run: |
+        python scripts/train_model.py
+        echo "version=$(cat model_version.txt)" >> $GITHUB_OUTPUT
+    
+    - name: Run model validation
+      run: |
+        python scripts/validate_model.py
+    
+    - name: Upload model artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: model-${{ steps.train.outputs.version }}
+        path: models/
+    
+  test:
+    needs: train
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Download model artifact
+      uses: actions/download-artifact@v3
+      with:
+        name: model-${{ needs.train.outputs.model_version }}
+        path: models/
+    
+    - name: Run integration tests
+      run: |
+        docker-compose -f docker-compose.test.yml up --abort-on-container-exit
+    
+    - name: Run performance benchmarks
+      run: |
+        python tests/performance/benchmark.py --model-version ${{ needs.train.outputs.model_version }}
+    
+    - name: Upload test results
+      uses: actions/upload-artifact@v3
+      with:
+        name: test-results-${{ needs.train.outputs.model_version }}
+        path: test_results/
+    
+  deploy:
+    needs: [train, test]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-east-1
+    
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v1
+    
+    - name: Build and push Docker image
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ needs.train.outputs.model_version }}
+      run: |
+        docker build -t $ECR_REGISTRY/credit-risk-glm:$IMAGE_TAG .
+        docker push $ECR_REGISTRY/credit-risk-glm:$IMAGE_TAG
+    
+    - name: Deploy to EKS
+      run: |
+        kubectl set image deployment/credit-risk-glm-api \
+          credit-risk-glm-api=$ECR_REGISTRY/credit-risk-glm:$IMAGE_TAG \
+          -n ml-models
+    
+    - name: Run deployment validation
+      run: |
+        kubectl rollout status deployment/credit-risk-glm-api -n ml-models
+        python scripts/validate_deployment.py --version ${{ needs.train.outputs.model_version }}
+    
+  monitor:
+    needs: deploy
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Monitor deployment metrics
+      run: |
+        python scripts/monitor_deployment.py \
+          --version ${{ needs.train.outputs.model_version }} \
+          --duration 3600
+    
+    - name: Check for model drift
+      run: |
+        python scripts/check_drift.py --version ${{ needs.train.outputs.model_version }}
+    
+    - name: Generate performance report
+      run: |
+        python scripts/generate_report.py --version ${{ needs.train.outputs.model_version }}
+    
+    - name: Send notification
+      if: always()
+      uses: 8398a7/action-slack@v3
+      with:
+        status: ${{ job.status }}
+        text: 'Model v${{ needs.train.outputs.model_version }} deployment: ${{ job.status }}'
+        webhook_url: ${{ secrets.SLACK_WEBHOOK }}
