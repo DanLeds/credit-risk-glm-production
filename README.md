@@ -1,6 +1,7 @@
 # Credit Risk GLM — Production Reference
 
-> Silent execution. Observable systems.
+> Silent execution. 
+> Observable systems.
 
 Production-grade reference implementation for **credit risk scoring using GLM (logistic regression)**, focused on **deployment, reliability, and interpretability** rather than model hype.
 
