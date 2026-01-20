@@ -678,37 +678,20 @@ def main_example():
 
     # 3. Load and prepare data
     print("\n[3/8] Loading and preparing data...")
-    try:
-        data = pd.read_csv("my_data.csv")
-        print(f"Data loaded: {len(data)} rows, {len(data.columns)} columns")
-        config.predictors = data.columns.difference(['presence_unpaid']).tolist()
-        print(f"Predictive variables: {len(config.predictors)}")
-        train_data, test_data = selector.prepare_data(data)
-        print(f"Split: {len(train_data)} train, {len(test_data)} test")
+    data = pd.read_csv("data/credit.csv")
+    print(f"Data loaded: {len(data)} rows, {len(data.columns)} columns")
 
-    except FileNotFoundError:
-        print("File 'my_data.csv' not found - creating demo dataset")
+    # Select numeric columns for the model
+    numeric_cols = ['duration_credit', 'amount_credit', 'effort_rate',
+                    'home_old', 'age', 'nb_credits', 'nb_of_dependants']
+    available_numeric = [col for col in numeric_cols if col in data.columns]
 
-        # Demo dataset
-        np.random.seed(42)
-        n_samples = 1000
-        data = pd.DataFrame({
-            'age': np.random.randint(18, 70, n_samples),
-            'revenu': np.random.randint(20000, 100000, n_samples),
-            'dette': np.random.randint(0, 50000, n_samples),
-            'nb_credits': np.random.randint(0, 5, n_samples),
-            'historique_paiement': np.random.randint(0, 10, n_samples)
-        })
-
-        # Generate target
-        data['presence_unpaid'] = (
-            (data['dette'] / data['revenu'] > 0.4) &
-            (data['nb_credits'] > 2)
-        ).astype(int)
-
-        config.predictors = data.columns.difference([config.target_column]).tolist()
-        train_data, test_data = selector.prepare_data(data)
-        print(f"Demo dataset created: {len(data)} rows")
+    # Keep only numeric features and target
+    data = data[available_numeric + ['presence_unpaid']].dropna()
+    config.predictors = available_numeric
+    print(f"Predictive variables: {config.predictors}")
+    train_data, test_data = selector.prepare_data(data)
+    print(f"Split: {len(train_data)} train, {len(test_data)} test")
 
     # 4. Fit model
     print("\n[4/8] Model training (random search)...")
