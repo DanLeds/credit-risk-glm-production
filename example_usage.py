@@ -16,40 +16,34 @@ from glm_model_production import (
 )
 
 
-def generate_sample_data(n_samples=1000):
-    """Generate sample data for demonstration."""
-    np.random.seed(42)
-    
-    data = pd.DataFrame({
-        'credit_score': np.random.randint(300, 850, n_samples),
-        'debt_to_income': np.random.uniform(0, 1, n_samples),
-        'months_employed': np.random.randint(0, 240, n_samples),
-        'num_credit_lines': np.random.randint(0, 20, n_samples),
-        'payment_history': np.random.choice([0, 1, 2], n_samples),
-        'loan_amount': np.random.uniform(1000, 50000, n_samples)
-    })
-    
-    # Create target based on features with some noise
-    logits = (
-        -0.005 * data['credit_score'] +
-        2.0 * data['debt_to_income'] +
-        -0.01 * data['months_employed'] +
-        0.1 * data['num_credit_lines'] +
-        0.5 * data['payment_history'] +
-        0.00001 * data['loan_amount'] +
-        np.random.randn(n_samples) * 0.5
-    )
-    
-    probs = 1 / (1 + np.exp(-logits))
-    data['presence_unpaid'] = (probs > 0.5).astype(int)
-    
-    return data
+def load_credit_data(filepath: str = "data/credit.csv"):
+    """Load credit data from CSV file.
+
+    Args:
+        filepath: Path to the CSV file (default: data/credit.csv)
+
+    Returns:
+        DataFrame with credit data ready for modeling
+    """
+    data = pd.read_csv(filepath)
+
+    # Select numeric columns for the model
+    numeric_cols = ['duration_credit', 'amount_credit', 'effort_rate',
+                    'home_old', 'age', 'nb_credits', 'nb_of_dependants']
+    available_numeric = [col for col in numeric_cols if col in data.columns]
+
+    # Create a clean dataset with numeric features and target
+    clean_data = data[available_numeric + ['presence_unpaid']].copy()
+    clean_data = clean_data.dropna()
+
+    print(f"Loaded {len(clean_data)} rows with columns: {list(clean_data.columns)}")
+    return clean_data
 
 
 def train_model():
     """Train and save the model."""
-    print("Generating sample data...")
-    data = generate_sample_data(1000)
+    print("Loading credit data from data/credit.csv...")
+    data = load_credit_data("data/credit.csv")
     
     print("\nConfiguring model...")
     config = ModelConfig(
@@ -113,14 +107,15 @@ def test_api_locally(model_path):
     # Load model for serving
     server = ModelServing(model_path)
     
-    # Test single prediction
+    # Test single prediction with features from credit.csv
     test_features = {
-        'credit_score': 720,
-        'debt_to_income': 0.3,
-        'months_employed': 60,
-        'num_credit_lines': 5,
-        'payment_history': 1,
-        'loan_amount': 15000
+        'duration_credit': 24,
+        'amount_credit': 5000,
+        'effort_rate': 3,
+        'home_old': 3,
+        'age': 35,
+        'nb_credits': 2,
+        'nb_of_dependants': 1
     }
     
     print("\nTest features:")
@@ -171,15 +166,16 @@ def test_api_endpoints():
         print(f"\nModel version: {info.get('version')}")
         print(f"Predictors: {info.get('predictors')}")
         
-        # Test single prediction
+        # Test single prediction with features from credit.csv
         test_data = {
             "features": {
-                "credit_score": 720,
-                "debt_to_income": 0.3,
-                "months_employed": 60,
-                "num_credit_lines": 5,
-                "payment_history": 1,
-                "loan_amount": 15000
+                "duration_credit": 24,
+                "amount_credit": 5000,
+                "effort_rate": 3,
+                "home_old": 3,
+                "age": 35,
+                "nb_credits": 2,
+                "nb_of_dependants": 1
             }
         }
         
