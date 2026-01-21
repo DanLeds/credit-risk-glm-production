@@ -8,7 +8,7 @@ import requests
 import json
 from pathlib import Path
 
-from glm_model_production import (
+from src.glm_model import (
     ModelConfig,
     GLMModelSelector,
     ModelSelectionStrategy,
