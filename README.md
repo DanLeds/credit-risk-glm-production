@@ -97,7 +97,7 @@ Some intentional trade-offs made in this project:
 ```yaml
 .
 ├── src/
-│ ├── glm_model_production.py # Training & selection logic
+│ ├── glm_model.py # Training & selection logic
 │ ├── api_service.py # Inference API
 │ └── metrics.py # Prometheus metrics
 │
