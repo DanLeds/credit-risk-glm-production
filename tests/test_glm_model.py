@@ -276,8 +276,8 @@ class TestModelServing(unittest.TestCase):
             predictors=['feature1', 'feature2'],
             max_iterations=5,
             random_seed=42,
-            min_predictor=2,
-            max_predictor=2
+            min_predictors=2,
+            max_predictors=2
         )
         
         self.selector = GLMModelSelector(config)
