@@ -275,7 +275,9 @@ class TestModelServing(unittest.TestCase):
             target_column='presence_unpaid',
             predictors=['feature1', 'feature2'],
             max_iterations=5,
-            random_seed=42
+            random_seed=42,
+            min_predictor=2,
+            max_predictor=2
         )
         
         self.selector = GLMModelSelector(config)
