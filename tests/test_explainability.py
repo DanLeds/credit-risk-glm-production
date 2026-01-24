@@ -3,7 +3,7 @@ Tests for the explainability module.
 """
 
 import sys
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 from datetime import datetime, timedelta
 import tempfile
 import os
@@ -13,8 +13,10 @@ import numpy as np
 import pandas as pd
 import pytest
 import matplotlib
-matplotlib.use('Agg')
+
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+
 
 # Helper function to mock only if not installed
 def mock_if_missing(module_name, mock_obj=None):
@@ -25,95 +27,89 @@ def mock_if_missing(module_name, mock_obj=None):
 
 # Mock optional/non-installed dependencies
 # SHAP
-mock_if_missing('shap')
+mock_if_missing("shap")
 
 # LIME
-mock_if_missing('lime')
-mock_if_missing('lime.lime_tabular')
+mock_if_missing("lime")
+mock_if_missing("lime.lime_tabular")
 
 # interpret
-mock_if_missing('interpret')
-mock_if_missing('interpret.glassbox')
-mock_if_missing('interpret.blackbox')
+mock_if_missing("interpret")
+mock_if_missing("interpret.glassbox")
+mock_if_missing("interpret.blackbox")
 
 # alibi
-mock_if_missing('alibi')
-mock_if_missing('alibi.explainers')
+mock_if_missing("alibi")
+mock_if_missing("alibi.explainers")
 
 # prometheus_client
 mock_prometheus = MagicMock()
 mock_prometheus.CollectorRegistry = MagicMock(return_value=MagicMock())
 mock_prometheus.Gauge = MagicMock(return_value=MagicMock())
 mock_prometheus.Counter = MagicMock(return_value=MagicMock())
-mock_if_missing('prometheus_client', mock_prometheus)
+mock_if_missing("prometheus_client", mock_prometheus)
 
 # plotly
-mock_if_missing('plotly')
-mock_if_missing('plotly.graph_objects')
-mock_if_missing('plotly.express')
-mock_if_missing('plotly.subplots')
+mock_if_missing("plotly")
+mock_if_missing("plotly.graph_objects")
+mock_if_missing("plotly.express")
+mock_if_missing("plotly.subplots")
 
 # seaborn
-mock_if_missing('seaborn')
+mock_if_missing("seaborn")
 
 # SALib
-mock_if_missing('SALib')
-mock_if_missing('SALib.sample')
-mock_if_missing('SALib.sample.morris')
-mock_if_missing('SALib.analyze')
-mock_if_missing('SALib.analyze.morris')
+mock_if_missing("SALib")
+mock_if_missing("SALib.sample")
+mock_if_missing("SALib.sample.morris")
+mock_if_missing("SALib.analyze")
+mock_if_missing("SALib.analyze.morris")
 
 # Cloud SDKs (usually not installed)
-mock_if_missing('boto3')
-mock_if_missing('azure')
-mock_if_missing('azure.identity')
-mock_if_missing('azure.monitor')
-mock_if_missing('azure.monitor.query')
-mock_if_missing('google')
-mock_if_missing('google.cloud')
-mock_if_missing('google.cloud.monitoring_v3')
-mock_if_missing('google.cloud.billing_v1')
+mock_if_missing("boto3")
+mock_if_missing("azure")
+mock_if_missing("azure.identity")
+mock_if_missing("azure.monitor")
+mock_if_missing("azure.monitor.query")
+mock_if_missing("google")
+mock_if_missing("google.cloud")
+mock_if_missing("google.cloud.monitoring_v3")
+mock_if_missing("google.cloud.billing_v1")
 
 from src.explainability import (
     ExplanationResult,
     ModelExplainer,
     ResourceUsage,
     CostEstimate,
-    CloudCostOptimizer
+    CloudCostOptimizer,
 )
 
 
 # ====================== Fixtures ======================
+
 
 @pytest.fixture
 def sample_model():
     """Create a mock model for testing."""
     model = MagicMock()
     model.predict.return_value = np.array([0, 1, 0, 1, 0])
-    model.predict_proba.return_value = np.array([
-        [0.8, 0.2],
-        [0.3, 0.7],
-        [0.9, 0.1],
-        [0.4, 0.6],
-        [0.7, 0.3]
-    ])
+    model.predict_proba.return_value = np.array(
+        [[0.8, 0.2], [0.3, 0.7], [0.9, 0.1], [0.4, 0.6], [0.7, 0.3]]
+    )
     return model
 
 
 @pytest.fixture
 def sample_feature_names():
     """Get sample feature names."""
-    return ['feature1', 'feature2', 'feature3', 'feature4', 'feature5']
+    return ["feature1", "feature2", "feature3", "feature4", "feature5"]
 
 
 @pytest.fixture
 def sample_dataframe(sample_feature_names):
     """Create sample DataFrame for testing."""
     np.random.seed(42)
-    return pd.DataFrame({
-        feat: np.random.randn(100)
-        for feat in sample_feature_names
-    })
+    return pd.DataFrame({feat: np.random.randn(100) for feat in sample_feature_names})
 
 
 @pytest.fixture
@@ -130,19 +126,20 @@ def sample_usage_data():
     data = []
     for i in range(168):  # 1 week hourly data
         usage = ResourceUsage(
-            timestamp=datetime.utcnow() - timedelta(hours=168-i),
+            timestamp=datetime.utcnow() - timedelta(hours=168 - i),
             cpu_usage=50 + np.random.randn() * 20,
             memory_usage=4 + np.random.randn() * 1,
             storage_usage=100,
             network_ingress=np.random.exponential(1),
             network_egress=np.random.exponential(0.5),
-            requests_count=int(np.random.poisson(1000))
+            requests_count=int(np.random.poisson(1000)),
         )
         data.append(usage)
     return data
 
 
 # ====================== ExplanationResult Tests ======================
+
 
 class TestExplanationResult:
     """Tests for ExplanationResult dataclass."""
@@ -152,7 +149,7 @@ class TestExplanationResult:
         result = ExplanationResult(
             explanation_type="shap_global",
             global_importance={"feature1": 0.5, "feature2": 0.3},
-            summary="Test summary"
+            summary="Test summary",
         )
         assert result.explanation_type == "shap_global"
         assert result.global_importance["feature1"] == 0.5
@@ -169,30 +166,23 @@ class TestExplanationResult:
 
     def test_explanation_result_with_local(self):
         """Test with local explanations."""
-        local_exp = [{
-            "instance_idx": 0,
-            "feature_contributions": {"feature1": 0.2},
-            "prediction": 0.7
-        }]
-        result = ExplanationResult(
-            explanation_type="lime_local",
-            local_explanations=local_exp
-        )
+        local_exp = [
+            {"instance_idx": 0, "feature_contributions": {"feature1": 0.2}, "prediction": 0.7}
+        ]
+        result = ExplanationResult(explanation_type="lime_local", local_explanations=local_exp)
         assert len(result.local_explanations) == 1
         assert result.local_explanations[0]["instance_idx"] == 0
 
 
 # ====================== ModelExplainer Tests ======================
 
+
 class TestModelExplainer:
     """Tests for ModelExplainer class."""
 
     def test_initialization(self, sample_model, sample_feature_names):
         """Test explainer initialization."""
-        explainer = ModelExplainer(
-            model=sample_model,
-            feature_names=sample_feature_names
-        )
+        explainer = ModelExplainer(model=sample_model, feature_names=sample_feature_names)
         assert explainer.model == sample_model
         assert explainer.feature_names == sample_feature_names
         assert explainer.class_names == ["Class 0", "Class 1"]
@@ -204,19 +194,14 @@ class TestModelExplainer:
             model=sample_model,
             feature_names=sample_feature_names,
             categorical_features=["feature1"],
-            class_names=["Bad", "Good"]
+            class_names=["Bad", "Good"],
         )
         assert explainer.categorical_features == ["feature1"]
         assert explainer.class_names == ["Bad", "Good"]
 
-    @patch('src.explainability.shap')
+    @patch("src.explainability.shap")
     def test_explain_global_shap(
-        self,
-        mock_shap_module,
-        sample_model,
-        sample_feature_names,
-        sample_dataframe,
-        sample_series
+        self, mock_shap_module, sample_model, sample_feature_names, sample_dataframe, sample_series
     ):
         """Test global SHAP explanations."""
         # Setup mock
@@ -227,12 +212,9 @@ class TestModelExplainer:
         mock_explainer.return_value = mock_shap_values
         mock_shap_module.Explainer.return_value = mock_explainer
 
-        explainer = ModelExplainer(
-            model=sample_model,
-            feature_names=sample_feature_names
-        )
+        explainer = ModelExplainer(model=sample_model, feature_names=sample_feature_names)
 
-        with patch.object(plt, 'subplots') as mock_subplots:
+        with patch.object(plt, "subplots") as mock_subplots:
             mock_fig = MagicMock()
             mock_ax = MagicMock()
             mock_subplots.return_value = (mock_fig, mock_ax)
@@ -245,14 +227,9 @@ class TestModelExplainer:
         assert result.explanation_type == "shap_global"
         assert result.global_importance is not None
 
-    @patch('src.explainability.permutation_importance')
+    @patch("src.explainability.permutation_importance")
     def test_explain_global_permutation(
-        self,
-        mock_perm_import,
-        sample_model,
-        sample_feature_names,
-        sample_dataframe,
-        sample_series
+        self, mock_perm_import, sample_model, sample_feature_names, sample_dataframe, sample_series
     ):
         """Test permutation importance explanations."""
         # Setup mock
@@ -262,48 +239,31 @@ class TestModelExplainer:
         mock_result.importances = np.random.randn(5, 10)
         mock_perm_import.return_value = mock_result
 
-        explainer = ModelExplainer(
-            model=sample_model,
-            feature_names=sample_feature_names
-        )
+        explainer = ModelExplainer(model=sample_model, feature_names=sample_feature_names)
 
-        with patch.object(plt, 'subplots') as mock_subplots:
+        with patch.object(plt, "subplots") as mock_subplots:
             mock_fig = MagicMock()
             mock_ax = MagicMock()
             mock_subplots.return_value = (mock_fig, mock_ax)
 
-            result = explainer.explain_global(
-                sample_dataframe,
-                sample_series,
-                method="permutation"
-            )
+            result = explainer.explain_global(sample_dataframe, sample_series, method="permutation")
 
         assert result.explanation_type == "permutation"
         assert result.global_importance is not None
         assert result.confidence_scores is not None
 
     def test_explain_global_invalid_method(
-        self,
-        sample_model,
-        sample_feature_names,
-        sample_dataframe
+        self, sample_model, sample_feature_names, sample_dataframe
     ):
         """Test error for invalid method."""
-        explainer = ModelExplainer(
-            model=sample_model,
-            feature_names=sample_feature_names
-        )
+        explainer = ModelExplainer(model=sample_model, feature_names=sample_feature_names)
 
         with pytest.raises(ValueError, match="Unknown explanation method"):
             explainer.explain_global(sample_dataframe, method="invalid")
 
-    @patch('src.explainability.shap')
+    @patch("src.explainability.shap")
     def test_explain_local_shap(
-        self,
-        mock_shap_module,
-        sample_model,
-        sample_feature_names,
-        sample_dataframe
+        self, mock_shap_module, sample_model, sample_feature_names, sample_dataframe
     ):
         """Test local SHAP explanations."""
         # Setup mock
@@ -316,12 +276,9 @@ class TestModelExplainer:
         mock_shap_module.Explainer.return_value = mock_explainer
         mock_shap_module.waterfall_plot = MagicMock()
 
-        explainer = ModelExplainer(
-            model=sample_model,
-            feature_names=sample_feature_names
-        )
+        explainer = ModelExplainer(model=sample_model, feature_names=sample_feature_names)
 
-        with patch.object(plt, 'subplots') as mock_subplots:
+        with patch.object(plt, "subplots") as mock_subplots:
             mock_fig = MagicMock()
             mock_ax = MagicMock()
             mock_subplots.return_value = (mock_fig, mock_ax)
@@ -332,13 +289,9 @@ class TestModelExplainer:
         assert result.local_explanations is not None
         assert len(result.local_explanations) == 1
 
-    @patch('src.explainability.lime')
+    @patch("src.explainability.lime")
     def test_explain_local_lime(
-        self,
-        mock_lime_module,
-        sample_model,
-        sample_feature_names,
-        sample_dataframe
+        self, mock_lime_module, sample_model, sample_feature_names, sample_dataframe
     ):
         """Test local LIME explanations."""
         # Setup mock
@@ -350,23 +303,16 @@ class TestModelExplainer:
         mock_explainer.explain_instance.return_value = mock_explanation
         mock_lime_module.lime_tabular.LimeTabularExplainer.return_value = mock_explainer
 
-        explainer = ModelExplainer(
-            model=sample_model,
-            feature_names=sample_feature_names
-        )
+        explainer = ModelExplainer(model=sample_model, feature_names=sample_feature_names)
 
         result = explainer.explain_local(sample_dataframe, 0, method="lime")
 
         assert result.explanation_type == "lime_local"
         assert result.local_explanations is not None
 
-    @patch('src.explainability.AnchorTabular')
+    @patch("src.explainability.AnchorTabular")
     def test_explain_local_anchor(
-        self,
-        mock_anchor,
-        sample_model,
-        sample_feature_names,
-        sample_dataframe
+        self, mock_anchor, sample_model, sample_feature_names, sample_dataframe
     ):
         """Test local Anchor explanations."""
         # Setup mock
@@ -381,7 +327,7 @@ class TestModelExplainer:
         explainer = ModelExplainer(
             model=sample_model,
             feature_names=sample_feature_names,
-            categorical_features=["feature1"]
+            categorical_features=["feature1"],
         )
 
         result = explainer.explain_local(sample_dataframe, 0, method="anchor")
@@ -391,26 +337,24 @@ class TestModelExplainer:
         assert result.local_explanations[0]["precision"] == 0.95
 
     def test_explain_local_counterfactual(
-        self,
-        sample_model,
-        sample_feature_names,
-        sample_dataframe
+        self, sample_model, sample_feature_names, sample_dataframe
     ):
         """Test counterfactual explanations."""
-        explainer = ModelExplainer(
-            model=sample_model,
-            feature_names=sample_feature_names
-        )
+        explainer = ModelExplainer(model=sample_model, feature_names=sample_feature_names)
 
         # Mock the entire method
-        with patch.object(explainer, '_explain_local_counterfactual') as mock_method:
+        with patch.object(explainer, "_explain_local_counterfactual") as mock_method:
             mock_method.return_value = ExplanationResult(
                 explanation_type="counterfactual",
-                local_explanations=[{
-                    "instance_idx": 0,
-                    "changes_needed": {"feature1": {"original": 0.5, "counterfactual": 0.8, "change": 0.3}},
-                    "counterfactual_found": True
-                }]
+                local_explanations=[
+                    {
+                        "instance_idx": 0,
+                        "changes_needed": {
+                            "feature1": {"original": 0.5, "counterfactual": 0.8, "change": 0.3}
+                        },
+                        "counterfactual_found": True,
+                    }
+                ],
             )
 
             result = explainer.explain_local(sample_dataframe, 0, method="counterfactual")
@@ -419,26 +363,18 @@ class TestModelExplainer:
         assert result.local_explanations[0]["counterfactual_found"] is True
 
     def test_explain_local_counterfactual_not_found(
-        self,
-        sample_model,
-        sample_feature_names,
-        sample_dataframe
+        self, sample_model, sample_feature_names, sample_dataframe
     ):
         """Test counterfactual when no CF found."""
-        explainer = ModelExplainer(
-            model=sample_model,
-            feature_names=sample_feature_names
-        )
+        explainer = ModelExplainer(model=sample_model, feature_names=sample_feature_names)
 
         # Mock the entire method
-        with patch.object(explainer, '_explain_local_counterfactual') as mock_method:
+        with patch.object(explainer, "_explain_local_counterfactual") as mock_method:
             mock_method.return_value = ExplanationResult(
                 explanation_type="counterfactual",
-                local_explanations=[{
-                    "instance_idx": 0,
-                    "changes_needed": None,
-                    "counterfactual_found": False
-                }]
+                local_explanations=[
+                    {"instance_idx": 0, "changes_needed": None, "counterfactual_found": False}
+                ],
             )
 
             result = explainer.explain_local(sample_dataframe, 0, method="counterfactual")
@@ -447,69 +383,44 @@ class TestModelExplainer:
         assert result.local_explanations[0]["changes_needed"] is None
 
     def test_explain_local_invalid_method(
-        self,
-        sample_model,
-        sample_feature_names,
-        sample_dataframe
+        self, sample_model, sample_feature_names, sample_dataframe
     ):
         """Test error for invalid local method."""
-        explainer = ModelExplainer(
-            model=sample_model,
-            feature_names=sample_feature_names
-        )
+        explainer = ModelExplainer(model=sample_model, feature_names=sample_feature_names)
 
         with pytest.raises(ValueError, match="Unknown explanation method"):
             explainer.explain_local(sample_dataframe, 0, method="invalid")
 
-    def test_explain_predictions_batch(
-        self,
-        sample_model,
-        sample_feature_names,
-        sample_dataframe
-    ):
+    def test_explain_predictions_batch(self, sample_model, sample_feature_names, sample_dataframe):
         """Test batch explanations."""
-        explainer = ModelExplainer(
-            model=sample_model,
-            feature_names=sample_feature_names
-        )
+        explainer = ModelExplainer(model=sample_model, feature_names=sample_feature_names)
 
         # Mock explain_local
-        with patch.object(explainer, 'explain_local') as mock_explain:
+        with patch.object(explainer, "explain_local") as mock_explain:
             mock_result = ExplanationResult(
-                explanation_type="shap_local",
-                local_explanations=[{"instance_idx": 0}]
+                explanation_type="shap_local", local_explanations=[{"instance_idx": 0}]
             )
             mock_explain.return_value = mock_result
 
             results = explainer.explain_predictions_batch(
-                sample_dataframe,
-                sample_size=5,
-                methods=["shap"]
+                sample_dataframe, sample_size=5, methods=["shap"]
             )
 
         assert "shap" in results
         assert len(results["shap"]) == 5
 
     def test_explain_predictions_batch_with_errors(
-        self,
-        sample_model,
-        sample_feature_names,
-        sample_dataframe
+        self, sample_model, sample_feature_names, sample_dataframe
     ):
         """Test batch explanations handles errors gracefully."""
-        explainer = ModelExplainer(
-            model=sample_model,
-            feature_names=sample_feature_names
-        )
+        explainer = ModelExplainer(model=sample_model, feature_names=sample_feature_names)
 
         # Mock explain_local to raise exception
-        with patch.object(explainer, 'explain_local') as mock_explain:
+        with patch.object(explainer, "explain_local") as mock_explain:
             mock_explain.side_effect = Exception("Test error")
 
             results = explainer.explain_predictions_batch(
-                sample_dataframe,
-                sample_size=5,
-                methods=["shap"]
+                sample_dataframe, sample_size=5, methods=["shap"]
             )
 
         # Should return empty list due to errors
@@ -517,36 +428,31 @@ class TestModelExplainer:
         assert len(results["shap"]) == 0
 
     def test_generate_report(
-        self,
-        sample_model,
-        sample_feature_names,
-        sample_dataframe,
-        sample_series
+        self, sample_model, sample_feature_names, sample_dataframe, sample_series
     ):
         """Test report generation."""
-        explainer = ModelExplainer(
-            model=sample_model,
-            feature_names=sample_feature_names
-        )
+        explainer = ModelExplainer(model=sample_model, feature_names=sample_feature_names)
 
-        with patch.object(explainer, 'explain_global') as mock_global, \
-             patch.object(explainer, 'explain_predictions_batch') as mock_batch:
-
+        with patch.object(explainer, "explain_global") as mock_global, patch.object(
+            explainer, "explain_predictions_batch"
+        ) as mock_batch:
             mock_global.return_value = ExplanationResult(
                 explanation_type="shap_global",
                 global_importance={"feature1": 0.5, "feature2": 0.3},
-                summary="Test summary"
+                summary="Test summary",
             )
 
             mock_batch.return_value = {
                 "shap": [
                     ExplanationResult(
                         explanation_type="shap_local",
-                        local_explanations=[{
-                            "instance_idx": 0,
-                            "prediction": 0.7,
-                            "feature_contributions": {"feature1": 0.2}
-                        }]
+                        local_explanations=[
+                            {
+                                "instance_idx": 0,
+                                "prediction": 0.7,
+                                "feature_contributions": {"feature1": 0.2},
+                            }
+                        ],
                     )
                 ]
             }
@@ -554,20 +460,18 @@ class TestModelExplainer:
             with tempfile.TemporaryDirectory() as tmpdir:
                 output_path = os.path.join(tmpdir, "test_report.html")
                 explainer.generate_report(
-                    sample_dataframe,
-                    sample_dataframe,
-                    sample_series,
-                    output_path
+                    sample_dataframe, sample_dataframe, sample_series, output_path
                 )
 
                 assert os.path.exists(output_path)
-                with open(output_path, 'r') as f:
+                with open(output_path, "r") as f:
                     content = f.read()
                     assert "Model Explainability Report" in content
                     assert "feature1" in content
 
 
 # ====================== ResourceUsage Tests ======================
+
 
 class TestResourceUsage:
     """Tests for ResourceUsage dataclass."""
@@ -580,7 +484,7 @@ class TestResourceUsage:
             memory_usage=8.0,
             storage_usage=100.0,
             network_ingress=1.5,
-            network_egress=0.5
+            network_egress=0.5,
         )
         assert usage.cpu_usage == 75.5
         assert usage.memory_usage == 8.0
@@ -597,13 +501,14 @@ class TestResourceUsage:
             network_ingress=0.5,
             network_egress=0.2,
             gpu_usage=30.0,
-            requests_count=1000
+            requests_count=1000,
         )
         assert usage.gpu_usage == 30.0
         assert usage.requests_count == 1000
 
 
 # ====================== CostEstimate Tests ======================
+
 
 class TestCostEstimate:
     """Tests for CostEstimate dataclass."""
@@ -616,7 +521,7 @@ class TestCostEstimate:
             storage_cost=5.0,
             network_cost=2.0,
             total_cost=17.0,
-            cost_per_prediction=0.001
+            cost_per_prediction=0.001,
         )
         assert estimate.period == "daily"
         assert estimate.total_cost == 17.0
@@ -631,87 +536,82 @@ class TestCostEstimate:
             network_cost=50.0,
             total_cost=450.0,
             cost_per_prediction=0.0005,
-            recommendations=["Downsize compute", "Use spot instances"]
+            recommendations=["Downsize compute", "Use spot instances"],
         )
         assert len(estimate.recommendations) == 2
 
 
 # ====================== CloudCostOptimizer Tests ======================
 
+
 class TestCloudCostOptimizer:
     """Tests for CloudCostOptimizer class."""
 
-    @patch('src.explainability.boto3')
+    @patch("src.explainability.boto3")
     def test_initialization_aws(self, mock_boto3):
         """Test AWS initialization."""
-        with patch('src.explainability.AWS_AVAILABLE', True):
+        with patch("src.explainability.AWS_AVAILABLE", True):
             optimizer = CloudCostOptimizer(cloud_provider="aws")
             assert optimizer.cloud_provider == "aws"
 
     def test_initialization_no_aws(self):
         """Test AWS initialization when boto3 not available."""
-        with patch('src.explainability.AWS_AVAILABLE', False):
+        with patch("src.explainability.AWS_AVAILABLE", False):
             with pytest.raises(ImportError, match="boto3 is required"):
                 CloudCostOptimizer(cloud_provider="aws")
 
     def test_initialization_no_azure(self):
         """Test Azure initialization when SDK not available."""
-        with patch('src.explainability.AZURE_AVAILABLE', False):
+        with patch("src.explainability.AZURE_AVAILABLE", False):
             with pytest.raises(ImportError, match="Azure SDK is required"):
                 CloudCostOptimizer(cloud_provider="azure")
 
     def test_initialization_no_gcp(self):
         """Test GCP initialization when SDK not available."""
-        with patch('src.explainability.GCP_AVAILABLE', False):
+        with patch("src.explainability.GCP_AVAILABLE", False):
             with pytest.raises(ImportError, match="Google Cloud SDK is required"):
                 CloudCostOptimizer(cloud_provider="gcp")
 
-    @patch('src.explainability.boto3')
+    @patch("src.explainability.boto3")
     def test_collect_usage_metrics_aws(self, mock_boto3, sample_usage_data):
         """Test AWS metrics collection."""
-        with patch('src.explainability.AWS_AVAILABLE', True):
+        with patch("src.explainability.AWS_AVAILABLE", True):
             optimizer = CloudCostOptimizer(cloud_provider="aws")
 
             # Mock CloudWatch response
             mock_cloudwatch = MagicMock()
             mock_cloudwatch.get_metric_statistics.return_value = {
-                'Datapoints': [{'Average': 50.0, 'Sum': 1000}]
+                "Datapoints": [{"Average": 50.0, "Sum": 1000}]
             }
             optimizer.cloudwatch = mock_cloudwatch
 
             result = optimizer.collect_usage_metrics(
-                "i-1234567890",
-                datetime.utcnow() - timedelta(hours=1),
-                datetime.utcnow()
+                "i-1234567890", datetime.utcnow() - timedelta(hours=1), datetime.utcnow()
             )
 
             assert isinstance(result, ResourceUsage)
             assert result.cpu_usage == 50.0
 
-    @patch('src.explainability.boto3')
+    @patch("src.explainability.boto3")
     def test_collect_usage_metrics_empty_datapoints(self, mock_boto3):
         """Test AWS metrics with empty datapoints."""
-        with patch('src.explainability.AWS_AVAILABLE', True):
+        with patch("src.explainability.AWS_AVAILABLE", True):
             optimizer = CloudCostOptimizer(cloud_provider="aws")
 
             mock_cloudwatch = MagicMock()
-            mock_cloudwatch.get_metric_statistics.return_value = {
-                'Datapoints': []
-            }
+            mock_cloudwatch.get_metric_statistics.return_value = {"Datapoints": []}
             optimizer.cloudwatch = mock_cloudwatch
 
             result = optimizer.collect_usage_metrics(
-                "i-1234567890",
-                datetime.utcnow() - timedelta(hours=1),
-                datetime.utcnow()
+                "i-1234567890", datetime.utcnow() - timedelta(hours=1), datetime.utcnow()
             )
 
             assert result.cpu_usage == 0
 
-    @patch('src.explainability.boto3')
+    @patch("src.explainability.boto3")
     def test_estimate_costs(self, mock_boto3, sample_usage_data):
         """Test cost estimation."""
-        with patch('src.explainability.AWS_AVAILABLE', True):
+        with patch("src.explainability.AWS_AVAILABLE", True):
             optimizer = CloudCostOptimizer(cloud_provider="aws")
 
             result = optimizer.estimate_costs(sample_usage_data, "daily")
@@ -721,30 +621,30 @@ class TestCloudCostOptimizer:
             assert result.total_cost > 0
             assert result.cost_per_prediction > 0
 
-    @patch('src.explainability.boto3')
+    @patch("src.explainability.boto3")
     def test_estimate_costs_weekly(self, mock_boto3, sample_usage_data):
         """Test weekly cost estimation."""
-        with patch('src.explainability.AWS_AVAILABLE', True):
+        with patch("src.explainability.AWS_AVAILABLE", True):
             optimizer = CloudCostOptimizer(cloud_provider="aws")
 
             result = optimizer.estimate_costs(sample_usage_data, "weekly")
 
             assert result.period == "weekly"
 
-    @patch('src.explainability.boto3')
+    @patch("src.explainability.boto3")
     def test_estimate_costs_monthly(self, mock_boto3, sample_usage_data):
         """Test monthly cost estimation."""
-        with patch('src.explainability.AWS_AVAILABLE', True):
+        with patch("src.explainability.AWS_AVAILABLE", True):
             optimizer = CloudCostOptimizer(cloud_provider="aws")
 
             result = optimizer.estimate_costs(sample_usage_data, "monthly")
 
             assert result.period == "monthly"
 
-    @patch('src.explainability.boto3')
+    @patch("src.explainability.boto3")
     def test_estimate_costs_low_cpu_recommendation(self, mock_boto3):
         """Test low CPU recommendation."""
-        with patch('src.explainability.AWS_AVAILABLE', True):
+        with patch("src.explainability.AWS_AVAILABLE", True):
             optimizer = CloudCostOptimizer(cloud_provider="aws")
 
             # Create low CPU usage data
@@ -756,7 +656,7 @@ class TestCloudCostOptimizer:
                     storage_usage=50.0,
                     network_ingress=0.5,
                     network_egress=0.2,
-                    requests_count=100
+                    requests_count=100,
                 )
                 for _ in range(24)
             ]
@@ -765,10 +665,10 @@ class TestCloudCostOptimizer:
 
             assert any("downsizing" in rec.lower() for rec in result.recommendations)
 
-    @patch('src.explainability.boto3')
+    @patch("src.explainability.boto3")
     def test_estimate_costs_high_cpu_recommendation(self, mock_boto3):
         """Test high CPU recommendation."""
-        with patch('src.explainability.AWS_AVAILABLE', True):
+        with patch("src.explainability.AWS_AVAILABLE", True):
             optimizer = CloudCostOptimizer(cloud_provider="aws")
 
             # Create high CPU usage data
@@ -780,7 +680,7 @@ class TestCloudCostOptimizer:
                     storage_usage=50.0,
                     network_ingress=0.5,
                     network_egress=0.2,
-                    requests_count=1000
+                    requests_count=1000,
                 )
                 for _ in range(24)
             ]
@@ -789,37 +689,26 @@ class TestCloudCostOptimizer:
 
             assert any("scaling" in rec.lower() for rec in result.recommendations)
 
-    @patch('src.explainability.boto3')
+    @patch("src.explainability.boto3")
     def test_optimize_resources(self, mock_boto3, sample_usage_data):
         """Test resource optimization."""
-        with patch('src.explainability.AWS_AVAILABLE', True):
+        with patch("src.explainability.AWS_AVAILABLE", True):
             optimizer = CloudCostOptimizer(cloud_provider="aws")
 
-            current_config = {
-                "instance_type": "t3.large",
-                "instance_count": 2,
-                "storage_size": 100
-            }
+            current_config = {"instance_type": "t3.large", "instance_count": 2, "storage_size": 100}
 
-            constraints = {
-                "target_cpu_utilization": 70,
-                "allow_spot_instances": True
-            }
+            constraints = {"target_cpu_utilization": 70, "allow_spot_instances": True}
 
-            optimized = optimizer.optimize_resources(
-                current_config,
-                sample_usage_data,
-                constraints
-            )
+            optimized = optimizer.optimize_resources(current_config, sample_usage_data, constraints)
 
             assert "auto_scaling" in optimized
             assert "min_instances" in optimized["auto_scaling"]
             assert "max_instances" in optimized["auto_scaling"]
 
-    @patch('src.explainability.boto3')
+    @patch("src.explainability.boto3")
     def test_optimize_resources_high_cpu(self, mock_boto3):
         """Test optimization with high CPU usage."""
-        with patch('src.explainability.AWS_AVAILABLE', True):
+        with patch("src.explainability.AWS_AVAILABLE", True):
             optimizer = CloudCostOptimizer(cloud_provider="aws")
 
             # Create high CPU usage data
@@ -831,30 +720,24 @@ class TestCloudCostOptimizer:
                     storage_usage=50.0,
                     network_ingress=0.5,
                     network_egress=0.2,
-                    requests_count=1000
+                    requests_count=1000,
                 )
                 for _ in range(168)
             ]
 
-            current_config = {
-                "instance_type": "t3.medium",
-                "instance_count": 1,
-                "storage_size": 50
-            }
+            current_config = {"instance_type": "t3.medium", "instance_count": 1, "storage_size": 50}
 
             optimized = optimizer.optimize_resources(
-                current_config,
-                usage_data,
-                {"target_cpu_utilization": 70}
+                current_config, usage_data, {"target_cpu_utilization": 70}
             )
 
             # Should recommend larger instance
             assert optimized["instance_type"] == "t3.large"
 
-    @patch('src.explainability.boto3')
+    @patch("src.explainability.boto3")
     def test_optimize_resources_low_cpu(self, mock_boto3):
         """Test optimization with low CPU usage."""
-        with patch('src.explainability.AWS_AVAILABLE', True):
+        with patch("src.explainability.AWS_AVAILABLE", True):
             optimizer = CloudCostOptimizer(cloud_provider="aws")
 
             # Create low CPU usage data
@@ -866,30 +749,24 @@ class TestCloudCostOptimizer:
                     storage_usage=50.0,
                     network_ingress=0.5,
                     network_egress=0.2,
-                    requests_count=100
+                    requests_count=100,
                 )
                 for _ in range(168)
             ]
 
-            current_config = {
-                "instance_type": "t3.large",
-                "instance_count": 1,
-                "storage_size": 50
-            }
+            current_config = {"instance_type": "t3.large", "instance_count": 1, "storage_size": 50}
 
             optimized = optimizer.optimize_resources(
-                current_config,
-                usage_data,
-                {"target_cpu_utilization": 70}
+                current_config, usage_data, {"target_cpu_utilization": 70}
             )
 
             # Should recommend smaller instance
             assert optimized["instance_type"] == "t3.medium"
 
-    @patch('src.explainability.boto3')
+    @patch("src.explainability.boto3")
     def test_get_smaller_instance(self, mock_boto3):
         """Test getting smaller instance type."""
-        with patch('src.explainability.AWS_AVAILABLE', True):
+        with patch("src.explainability.AWS_AVAILABLE", True):
             optimizer = CloudCostOptimizer(cloud_provider="aws")
 
             assert optimizer._get_smaller_instance("t3.large") == "t3.medium"
@@ -897,10 +774,10 @@ class TestCloudCostOptimizer:
             # Unknown type returns same
             assert optimizer._get_smaller_instance("unknown") == "unknown"
 
-    @patch('src.explainability.boto3')
+    @patch("src.explainability.boto3")
     def test_get_larger_instance(self, mock_boto3):
         """Test getting larger instance type."""
-        with patch('src.explainability.AWS_AVAILABLE', True):
+        with patch("src.explainability.AWS_AVAILABLE", True):
             optimizer = CloudCostOptimizer(cloud_provider="aws")
 
             assert optimizer._get_larger_instance("t3.medium") == "t3.large"
@@ -908,20 +785,20 @@ class TestCloudCostOptimizer:
             # Unknown type returns same
             assert optimizer._get_larger_instance("unknown") == "unknown"
 
-    @patch('src.explainability.boto3')
+    @patch("src.explainability.boto3")
     def test_estimate_workload_duration(self, mock_boto3, sample_usage_data):
         """Test workload duration estimation."""
-        with patch('src.explainability.AWS_AVAILABLE', True):
+        with patch("src.explainability.AWS_AVAILABLE", True):
             optimizer = CloudCostOptimizer(cloud_provider="aws")
 
             duration = optimizer._estimate_workload_duration(sample_usage_data)
 
             assert duration > 0
 
-    @patch('src.explainability.boto3')
+    @patch("src.explainability.boto3")
     def test_estimate_workload_duration_no_high_usage(self, mock_boto3):
         """Test workload duration with no high usage periods."""
-        with patch('src.explainability.AWS_AVAILABLE', True):
+        with patch("src.explainability.AWS_AVAILABLE", True):
             optimizer = CloudCostOptimizer(cloud_provider="aws")
 
             # Create low usage data
@@ -932,7 +809,7 @@ class TestCloudCostOptimizer:
                     memory_usage=2.0,
                     storage_usage=50.0,
                     network_ingress=0.5,
-                    network_egress=0.2
+                    network_egress=0.2,
                 )
                 for _ in range(10)
             ]
@@ -942,40 +819,36 @@ class TestCloudCostOptimizer:
             # Should return default 30 minutes
             assert duration == 30
 
-    @patch('src.explainability.boto3')
+    @patch("src.explainability.boto3")
     def test_generate_cost_report(self, mock_boto3, sample_usage_data):
         """Test cost report generation."""
-        with patch('src.explainability.AWS_AVAILABLE', True):
+        with patch("src.explainability.AWS_AVAILABLE", True):
             optimizer = CloudCostOptimizer(cloud_provider="aws")
 
             # Mock plotly figure
             mock_fig = MagicMock()
             mock_fig.to_json.return_value = '{"data": [], "layout": {}}'
 
-            with patch('src.explainability.make_subplots', return_value=mock_fig):
+            with patch("src.explainability.make_subplots", return_value=mock_fig):
                 with tempfile.TemporaryDirectory() as tmpdir:
                     output_path = os.path.join(tmpdir, "test_cost_report.html")
                     optimizer.generate_cost_report(sample_usage_data, output_path)
 
                     assert os.path.exists(output_path)
-                    with open(output_path, 'r') as f:
+                    with open(output_path, "r") as f:
                         content = f.read()
                         assert "Cost Optimization Report" in content
 
 
 # ====================== Integration Tests ======================
 
+
 class TestExplainabilityIntegration:
     """Integration tests for explainability module."""
 
-    @patch('src.explainability.shap')
+    @patch("src.explainability.shap")
     def test_model_explainer_workflow(
-        self,
-        mock_shap_module,
-        sample_model,
-        sample_feature_names,
-        sample_dataframe,
-        sample_series
+        self, mock_shap_module, sample_model, sample_feature_names, sample_dataframe, sample_series
     ):
         """Test complete model explainer workflow."""
         # Setup mocks
@@ -993,36 +866,25 @@ class TestExplainabilityIntegration:
         mock_shap_module.waterfall_plot = MagicMock()
 
         # Create explainer
-        explainer = ModelExplainer(
-            model=sample_model,
-            feature_names=sample_feature_names
-        )
+        explainer = ModelExplainer(model=sample_model, feature_names=sample_feature_names)
 
-        with patch.object(plt, 'subplots') as mock_subplots:
+        with patch.object(plt, "subplots") as mock_subplots:
             mock_fig = MagicMock()
             mock_ax = MagicMock()
             mock_subplots.return_value = (mock_fig, mock_ax)
 
             # Global explanation
-            global_exp = explainer.explain_global(
-                sample_dataframe,
-                sample_series,
-                method="shap"
-            )
+            global_exp = explainer.explain_global(sample_dataframe, sample_series, method="shap")
             assert global_exp.explanation_type == "shap_global"
 
             # Local explanation
-            local_exp = explainer.explain_local(
-                sample_dataframe,
-                0,
-                method="shap"
-            )
+            local_exp = explainer.explain_local(sample_dataframe, 0, method="shap")
             assert local_exp.explanation_type == "shap_local"
 
-    @patch('src.explainability.boto3')
+    @patch("src.explainability.boto3")
     def test_cost_optimizer_workflow(self, mock_boto3, sample_usage_data):
         """Test complete cost optimizer workflow."""
-        with patch('src.explainability.AWS_AVAILABLE', True):
+        with patch("src.explainability.AWS_AVAILABLE", True):
             # Initialize optimizer
             optimizer = CloudCostOptimizer(cloud_provider="aws")
 
@@ -1031,16 +893,12 @@ class TestExplainabilityIntegration:
             assert cost.total_cost > 0
 
             # Optimize resources
-            current_config = {
-                "instance_type": "t3.large",
-                "instance_count": 2,
-                "storage_size": 100
-            }
+            current_config = {"instance_type": "t3.large", "instance_count": 2, "storage_size": 100}
 
             optimized = optimizer.optimize_resources(
                 current_config,
                 sample_usage_data,
-                {"target_cpu_utilization": 70, "allow_spot_instances": True}
+                {"target_cpu_utilization": 70, "allow_spot_instances": True},
             )
 
             assert "auto_scaling" in optimized
@@ -1048,22 +906,21 @@ class TestExplainabilityIntegration:
 
 # ====================== Azure Provider Tests ======================
 
+
 class TestAzureProvider:
     """Tests for Azure provider."""
 
     def test_collect_azure_metrics(self):
         """Test Azure metrics collection."""
-        with patch('src.explainability.AZURE_AVAILABLE', True), \
-             patch('src.explainability.LogsQueryClient'), \
-             patch('src.explainability.MetricsQueryClient'), \
-             patch('azure.identity.DefaultAzureCredential'):
-
+        with patch("src.explainability.AZURE_AVAILABLE", True), patch(
+            "src.explainability.LogsQueryClient"
+        ), patch("src.explainability.MetricsQueryClient"), patch(
+            "azure.identity.DefaultAzureCredential"
+        ):
             optimizer = CloudCostOptimizer(cloud_provider="azure")
 
             result = optimizer.collect_usage_metrics(
-                "resource-id",
-                datetime.utcnow() - timedelta(hours=1),
-                datetime.utcnow()
+                "resource-id", datetime.utcnow() - timedelta(hours=1), datetime.utcnow()
             )
 
             assert isinstance(result, ResourceUsage)
@@ -1073,21 +930,19 @@ class TestAzureProvider:
 
 # ====================== GCP Provider Tests ======================
 
+
 class TestGCPProvider:
     """Tests for GCP provider."""
 
     def test_collect_gcp_metrics(self):
         """Test GCP metrics collection."""
-        with patch('src.explainability.GCP_AVAILABLE', True), \
-             patch('src.explainability.monitoring_v3'), \
-             patch('src.explainability.billing_v1'):
-
+        with patch("src.explainability.GCP_AVAILABLE", True), patch(
+            "src.explainability.monitoring_v3"
+        ), patch("src.explainability.billing_v1"):
             optimizer = CloudCostOptimizer(cloud_provider="gcp")
 
             result = optimizer.collect_usage_metrics(
-                "resource-id",
-                datetime.utcnow() - timedelta(hours=1),
-                datetime.utcnow()
+                "resource-id", datetime.utcnow() - timedelta(hours=1), datetime.utcnow()
             )
 
             assert isinstance(result, ResourceUsage)
@@ -1097,13 +952,14 @@ class TestGCPProvider:
 
 # ====================== Edge Cases Tests ======================
 
+
 class TestEdgeCases:
     """Tests for edge cases."""
 
-    @patch('src.explainability.boto3')
+    @patch("src.explainability.boto3")
     def test_empty_usage_data(self, mock_boto3):
         """Test with empty usage data."""
-        with patch('src.explainability.AWS_AVAILABLE', True):
+        with patch("src.explainability.AWS_AVAILABLE", True):
             optimizer = CloudCostOptimizer(cloud_provider="aws")
 
             # Empty usage data - should not crash
@@ -1113,10 +969,10 @@ class TestEdgeCases:
             with pytest.raises((ValueError, IndexError, ZeroDivisionError)):
                 optimizer.estimate_costs(usage_data, "daily")
 
-    @patch('src.explainability.boto3')
+    @patch("src.explainability.boto3")
     def test_single_usage_data_point(self, mock_boto3):
         """Test with single usage data point."""
-        with patch('src.explainability.AWS_AVAILABLE', True):
+        with patch("src.explainability.AWS_AVAILABLE", True):
             optimizer = CloudCostOptimizer(cloud_provider="aws")
 
             usage_data = [
@@ -1127,7 +983,7 @@ class TestEdgeCases:
                     storage_usage=50.0,
                     network_ingress=0.5,
                     network_egress=0.2,
-                    requests_count=100
+                    requests_count=100,
                 )
             ]
 
@@ -1141,13 +997,10 @@ class TestEdgeCases:
         # Remove predict_proba
         del model.predict_proba
 
-        explainer = ModelExplainer(
-            model=model,
-            feature_names=sample_feature_names
-        )
+        explainer = ModelExplainer(model=model, feature_names=sample_feature_names)
 
         # Should fall back to predict method
-        with patch('src.explainability.shap') as mock_shap:
+        with patch("src.explainability.shap") as mock_shap:
             mock_shap_exp = MagicMock()
             mock_shap_values = MagicMock()
             mock_shap_values.shape = (100, 5)
@@ -1157,7 +1010,7 @@ class TestEdgeCases:
             mock_shap.summary_plot = MagicMock()
             mock_shap.plots = MagicMock()
 
-            with patch.object(plt, 'subplots') as mock_subplots:
+            with patch.object(plt, "subplots") as mock_subplots:
                 mock_fig = MagicMock()
                 mock_ax = MagicMock()
                 mock_subplots.return_value = (mock_fig, mock_ax)
