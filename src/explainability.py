@@ -499,15 +499,15 @@ class ModelExplainer:
         <head>
             <title>Model Explainability Report</title>
             <style>
-                body { font-family: Arial, sans-serif; margin: 20px; }
-                h1 { color: #333; }
-                h2 { color: #666; margin-top: 30px; }
-                .section { margin-bottom: 30px; }
-                .metric { font-weight: bold; }
-                img { max-width: 100%; height: auto; }
-                table { border-collapse: collapse; width: 100%; }
-                th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-                th { background-color: #f2f2f2; }
+                body {{ font-family: Arial, sans-serif; margin: 20px; }}
+                h1 {{ color: #333; }}
+                h2 {{ color: #666; margin-top: 30px; }}
+                .section {{ margin-bottom: 30px; }}
+                .metric {{ font-weight: bold; }}
+                img {{ max-width: 100%; height: auto; }}
+                table {{ border-collapse: collapse; width: 100%; }}
+                th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+                th {{ background-color: #f2f2f2; }}
             </style>
         </head>
         <body>
@@ -802,7 +802,13 @@ class CloudCostOptimizer:
             
         Returns:
             CostEstimate object
+
+        Raises:
+            ValueError: If usage_data is empty
         """
+        if not usage_data:
+            raise ValueError("usage_data cannot be empty")
+
         # Cloud provider pricing (simplified)
         pricing = {
             "aws": {

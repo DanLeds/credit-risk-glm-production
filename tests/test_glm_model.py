@@ -12,11 +12,6 @@ from unittest.mock import Mock, patch, MagicMock
 from datetime import datetime
 import json
 
-# Mock pyarrow before sklearn imports
-mock_pyarrow = MagicMock()
-mock_pyarrow.__version__ = "14.0.0"
-sys.modules['pyarrow'] = mock_pyarrow
-sys.modules['pyarrow.parquet'] = MagicMock()
 
 from src.glm_model import (
     ModelConfig, ModelSelectionStrategy, DataValidator,

@@ -15,12 +15,6 @@ import numpy as np
 import pandas as pd
 
 # Mock external dependencies before importing the module
-# Note: pyarrow is needed by sklearn, so we mock it with proper attributes
-mock_pyarrow = MagicMock()
-mock_pyarrow.__version__ = "14.0.0"
-sys.modules['pyarrow'] = mock_pyarrow
-sys.modules['pyarrow.parquet'] = MagicMock()
-
 sys.modules['sqlalchemy'] = MagicMock()
 sys.modules['sqlalchemy.ext'] = MagicMock()
 sys.modules['sqlalchemy.ext.declarative'] = MagicMock()
