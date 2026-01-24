@@ -675,7 +675,7 @@ class TestCloudCostOptimizer:
             # Mock CloudWatch response
             mock_cloudwatch = MagicMock()
             mock_cloudwatch.get_metric_statistics.return_value = {
-                'Datapoints': [{'Average': 50.0}, {'Sum': 1000}]
+                'Datapoints': [{'Average': 50.0, 'Sum': 1000}]
             }
             optimizer.cloudwatch = mock_cloudwatch
 
