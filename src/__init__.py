@@ -11,7 +11,7 @@ from .glm_model import (
     ModelResult,
     ModelSelectionStrategy,
     ModelServing,
-    DataValidator
+    DataValidator,
 )
 
 __version__ = "1.0.0"
@@ -22,5 +22,5 @@ __all__ = [
     "ModelResult",
     "ModelSelectionStrategy",
     "ModelServing",
-    "DataValidator"
+    "DataValidator",
 ]

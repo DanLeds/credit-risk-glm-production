@@ -23,14 +23,14 @@ import joblib
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
 
 class ModelSelectionStrategy(Enum):
     """Strategy for model selection."""
+
     RANDOM = "random"
     EXHAUSTIVE = "exhaustive"
     FORWARD = "forward"
@@ -40,6 +40,7 @@ class ModelSelectionStrategy(Enum):
 @dataclass
 class ModelConfig:
     """Configuration for GLM model selection."""
+
     target_column: str = "presence_unpaid"
     predictors: List[str] = field(default_factory=list)
     max_iterations: int = 100
@@ -68,6 +69,7 @@ class ModelConfig:
 @dataclass
 class ModelMetrics:
     """Metrics for model evaluation."""
+
     aic: float
     bic: float
     auc: float
@@ -83,13 +85,14 @@ class ModelMetrics:
         """Convert metrics to dictionary."""
         data = asdict(self)
         if self.confusion_matrix is not None:
-            data['confusion_matrix'] = self.confusion_matrix.tolist()
+            data["confusion_matrix"] = self.confusion_matrix.tolist()
         return data
 
 
 @dataclass
 class ModelResult:
     """Result of a fitted model."""
+
     formula: str
     predictors: List[str]
     model: Any
@@ -102,11 +105,7 @@ class DataValidator:
     """Validator for input data."""
 
     @staticmethod
-    def validate_dataframe(
-        df: pd.DataFrame,
-        target_column: str,
-        predictors: List[str]
-    ) -> None:
+    def validate_dataframe(df: pd.DataFrame, target_column: str, predictors: List[str]) -> None:
         """
         Validate input DataFrame for model training.
 
@@ -169,7 +168,7 @@ class GLMModelSelector:
         self,
         data: pd.DataFrame,
         train_data: Optional[pd.DataFrame] = None,
-        test_data: Optional[pd.DataFrame] = None
+        test_data: Optional[pd.DataFrame] = None,
     ) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
         Prepare data for model training.
@@ -190,28 +189,23 @@ class GLMModelSelector:
                 data,
                 test_size=self.config.test_size,
                 random_state=self.config.random_seed,
-                stratify=data[self.config.target_column]
+                stratify=data[self.config.target_column],
             )
 
         DataValidator.validate_dataframe(
-            self.train_data,
-            self.config.target_column,
-            self.config.predictors
+            self.train_data, self.config.target_column, self.config.predictors
         )
         DataValidator.validate_dataframe(
-            self.test_data,
-            self.config.target_column,
-            self.config.predictors
+            self.test_data, self.config.target_column, self.config.predictors
         )
 
-        logger.info(f'Data prepared: {len(self.train_data)} train, {len(self.test_data)} test samples')
+        logger.info(
+            f"Data prepared: {len(self.train_data)} train, {len(self.test_data)} test samples"
+        )
         return self.train_data, self.test_data
 
     def _fit_model(
-        self,
-        predictors: List[str],
-        train_data: pd.DataFrame,
-        test_data: pd.DataFrame
+        self, predictors: List[str], train_data: pd.DataFrame, test_data: pd.DataFrame
     ) -> ModelResult:
         """
         Fit a single GLM model with given predictors.
@@ -228,11 +222,7 @@ class GLMModelSelector:
 
         try:
             # Fit model
-            model = smf.glm(
-                formula=formula,
-                data=train_data,
-                family=sm.families.Binomial()
-            ).fit()
+            model = smf.glm(formula=formula, data=train_data, family=sm.families.Binomial()).fit()
 
             # Predictions
             y_test = test_data[self.config.target_column]
@@ -264,10 +254,10 @@ class GLMModelSelector:
                 log_likelihood=model.llf,
                 confusion_matrix=confusion_matrix(y_test, predicted_classes),
                 roc_curve={
-                    'fpr': fpr.tolist(),
-                    'tpr': tpr.tolist(),
-                    'thresholds': thresholds.tolist()
-                }
+                    "fpr": fpr.tolist(),
+                    "tpr": tpr.tolist(),
+                    "thresholds": thresholds.tolist(),
+                },
             )
 
             return ModelResult(
@@ -275,7 +265,7 @@ class GLMModelSelector:
                 predictors=predictors,
                 model=model,
                 metrics=metrics,
-                config=self.config
+                config=self.config,
             )
 
         except Exception as e:
@@ -289,34 +279,27 @@ class GLMModelSelector:
         Returns:
             Best ModelResult found
         """
-        best_aic = float('inf')
+        best_aic = float("inf")
         best_model = None
 
         for iteration in range(self.config.max_iterations):
             # Random number of predictors
             max_k = self.config.max_predictors or len(self.config.predictors)
-            k = random.randint(
-                self.config.min_predictors,
-                min(max_k, len(self.config.predictors))
-            )
+            k = random.randint(self.config.min_predictors, min(max_k, len(self.config.predictors)))
 
             # Random selection of predictors
             selected_predictors = random.sample(self.config.predictors, k)
 
             # Fit model
             try:
-                model_result = self._fit_model(
-                    selected_predictors,
-                    self.train_data,
-                    self.test_data
-                )
+                model_result = self._fit_model(selected_predictors, self.train_data, self.test_data)
 
                 self.all_models.append(model_result)
 
                 # Limit memory usage: keep only top N models by AIC
                 if len(self.all_models) > self.config.max_models_to_keep:
                     self.all_models.sort(key=lambda m: m.metrics.aic)
-                    self.all_models = self.all_models[:self.config.max_models_to_keep]
+                    self.all_models = self.all_models[: self.config.max_models_to_keep]
 
                 # Update best model
                 if model_result.metrics.aic < best_aic:
@@ -332,9 +315,7 @@ class GLMModelSelector:
                 continue
 
         if best_model is None:
-            raise ValueError(
-                f"No valid model found after {self.config.max_iterations} iterations"
-            )
+            raise ValueError(f"No valid model found after {self.config.max_iterations} iterations")
 
         logger.info(
             f"Random search completed: Best AIC={best_model.metrics.aic:.2f}, "
@@ -354,7 +335,9 @@ class GLMModelSelector:
         if self.train_data is None or self.test_data is None:
             raise ValueError("Data must be prepared before fitting")
 
-        logger.info(f"Starting model selection with strategy: {self.config.selection_strategy.value}")
+        logger.info(
+            f"Starting model selection with strategy: {self.config.selection_strategy.value}"
+        )
 
         if self.config.selection_strategy == ModelSelectionStrategy.RANDOM:
             self.best_model = self._random_search()
@@ -376,7 +359,7 @@ class GLMModelSelector:
         X: pd.DataFrame,
         return_proba: bool = True,
         threshold: float = 0.5,
-        return_dataframe: bool = False
+        return_dataframe: bool = False,
     ) -> Union[np.ndarray, pd.DataFrame]:
         """
         Make predictions with the fitted model.
@@ -404,11 +387,14 @@ class GLMModelSelector:
         probabilities = self.best_model.model.predict(X_filtered)
 
         if return_dataframe:
-            return pd.DataFrame({
-                'proba_default': probabilities,
-                'predicted_class': (probabilities >= threshold).astype(int),
-                'decision': ['REFUSE' if p >= threshold else 'ACCEPT' for p in probabilities]
-            }, index=X.index)
+            return pd.DataFrame(
+                {
+                    "proba_default": probabilities,
+                    "predicted_class": (probabilities >= threshold).astype(int),
+                    "decision": ["REFUSE" if p >= threshold else "ACCEPT" for p in probabilities],
+                },
+                index=X.index,
+            )
 
         if return_proba:
             return probabilities
@@ -429,16 +415,16 @@ class GLMModelSelector:
         filepath.parent.mkdir(parents=True, exist_ok=True)
 
         config_dict = asdict(self.config)
-        config_dict['selection_strategy'] = self.config.selection_strategy.value
+        config_dict["selection_strategy"] = self.config.selection_strategy.value
 
         model_data = {
-            'model': self.best_model.model,
-            'formula': self.best_model.formula,
-            'predictors': self.best_model.predictors,
-            'metrics': self.best_model.metrics.to_dict(),
-            'config': config_dict,
-            'timestamp': self.best_model.timestamp.isoformat(),
-            'version': '1.0.0'
+            "model": self.best_model.model,
+            "formula": self.best_model.formula,
+            "predictors": self.best_model.predictors,
+            "metrics": self.best_model.metrics.to_dict(),
+            "config": config_dict,
+            "timestamp": self.best_model.timestamp.isoformat(),
+            "version": "1.0.0",
         }
 
         joblib.dump(model_data, filepath, compress=3)
@@ -450,7 +436,7 @@ class GLMModelSelector:
         )
 
     @classmethod
-    def load_model(cls, filepath: Union[str, Path]) -> 'GLMModelSelector':
+    def load_model(cls, filepath: Union[str, Path]) -> "GLMModelSelector":
         """
         Load a model from disk.
 
@@ -467,29 +453,32 @@ class GLMModelSelector:
         model_data = joblib.load(filepath)
         logger.info(f"Loading model from {filepath}")
 
-        config_dict = model_data['config'].copy()
-        if 'selection_strategy' in config_dict and isinstance(config_dict['selection_strategy'], str):
-            config_dict['selection_strategy'] = ModelSelectionStrategy(config_dict['selection_strategy'])
+        config_dict = model_data["config"].copy()
+        if "selection_strategy" in config_dict and isinstance(
+            config_dict["selection_strategy"], str
+        ):
+            config_dict["selection_strategy"] = ModelSelectionStrategy(
+                config_dict["selection_strategy"]
+            )
 
         config = ModelConfig(**config_dict)
         selector = cls(config)
 
-        metrics_dict = model_data['metrics']
-        if 'confusion_matrix' in metrics_dict and metrics_dict['confusion_matrix'] is not None:
-            metrics_dict['confusion_matrix'] = np.array(metrics_dict['confusion_matrix'])
+        metrics_dict = model_data["metrics"]
+        if "confusion_matrix" in metrics_dict and metrics_dict["confusion_matrix"] is not None:
+            metrics_dict["confusion_matrix"] = np.array(metrics_dict["confusion_matrix"])
 
-        metrics = ModelMetrics(**{
-            k: v for k, v in metrics_dict.items()
-            if k in ModelMetrics.__annotations__
-        })
+        metrics = ModelMetrics(
+            **{k: v for k, v in metrics_dict.items() if k in ModelMetrics.__annotations__}
+        )
 
         selector.best_model = ModelResult(
-            formula=model_data['formula'],
-            predictors=model_data['predictors'],
-            model=model_data['model'],
+            formula=model_data["formula"],
+            predictors=model_data["predictors"],
+            model=model_data["model"],
             metrics=metrics,
-            timestamp=datetime.fromisoformat(model_data['timestamp']),
-            config=config
+            timestamp=datetime.fromisoformat(model_data["timestamp"]),
+            config=config,
         )
 
         logger.info(
@@ -508,7 +497,7 @@ class GLMModelSelector:
             Dictionary with model summary
         """
         config_dict = asdict(self.config)
-        config_dict['selection_strategy'] = self.config.selection_strategy.value
+        config_dict["selection_strategy"] = self.config.selection_strategy.value
 
         if self.best_model is None:
             return {"status": "No model fitted"}
@@ -521,7 +510,7 @@ class GLMModelSelector:
                 "formula": self.best_model.formula,
                 "predictors": self.best_model.predictors,
                 "metrics": self.best_model.metrics.to_dict(),
-                "timestamp": self.best_model.timestamp.isoformat()
+                "timestamp": self.best_model.timestamp.isoformat(),
             },
             "version": "1.0.0",
             "total_models_evaluated": len(self.all_models),
@@ -532,9 +521,9 @@ class GLMModelSelector:
                 "auc_max": float(np.max(all_auc)),
                 "aic_mean": float(np.mean(all_aic)),
                 "aic_min": float(np.min(all_aic)),
-                "aic_max": float(np.max(all_aic))
+                "aic_max": float(np.max(all_aic)),
             },
-            "config": config_dict
+            "config": config_dict,
         }
 
     def get_model_comparison(self) -> pd.DataFrame:
@@ -549,18 +538,20 @@ class GLMModelSelector:
 
         comparison_data = []
         for model in self.all_models:
-            comparison_data.append({
-                'num_predictors': len(model.predictors),
-                'predictors': ', '.join(model.predictors),
-                'aic': model.metrics.aic,
-                'bic': model.metrics.bic,
-                'auc': model.metrics.auc,
-                'accuracy': model.metrics.accuracy,
-                'f1_score': model.metrics.f1_score
-            })
+            comparison_data.append(
+                {
+                    "num_predictors": len(model.predictors),
+                    "predictors": ", ".join(model.predictors),
+                    "aic": model.metrics.aic,
+                    "bic": model.metrics.bic,
+                    "auc": model.metrics.auc,
+                    "accuracy": model.metrics.accuracy,
+                    "f1_score": model.metrics.f1_score,
+                }
+            )
 
         df = pd.DataFrame(comparison_data)
-        return df.sort_values('aic')
+        return df.sort_values("aic")
 
 
 class ModelServing:
@@ -574,6 +565,8 @@ class ModelServing:
             model_path: Path to the saved model
         """
         self.selector = GLMModelSelector.load_model(model_path)
+        if self.selector.best_model is None:
+            raise ValueError("No best model found in loaded selector")
         self.model = self.selector.best_model.model
         self.predictors = self.selector.best_model.predictors
 
@@ -592,17 +585,13 @@ class ModelServing:
         predicted_class = int(probability >= 0.5)
 
         return {
-            'probability': probability,
-            'predicted_class': predicted_class,
-            'confidence': max(probability, 1 - probability),
-            'predictors_used': self.predictors
+            "probability": probability,
+            "predicted_class": predicted_class,
+            "confidence": max(probability, 1 - probability),
+            "predictors_used": self.predictors,
         }
 
-    def predict_batch(
-        self,
-        data: pd.DataFrame,
-        include_confidence: bool = True
-    ) -> pd.DataFrame:
+    def predict_batch(self, data: pd.DataFrame, include_confidence: bool = True) -> pd.DataFrame:
         """
         Make predictions for a batch of instances.
 
@@ -615,11 +604,11 @@ class ModelServing:
         """
         results = data.copy()
         probabilities = self.selector.predict(data, return_proba=True)
-        results['predicted_probability'] = probabilities
-        results['predicted_class'] = (probabilities >= 0.5).astype(int)
+        results["predicted_probability"] = probabilities
+        results["predicted_class"] = (probabilities >= 0.5).astype(int)
 
         if include_confidence:
-            results['confidence'] = np.maximum(probabilities, 1 - probabilities)
+            results["confidence"] = np.maximum(probabilities, 1 - probabilities)
 
         return results
 
@@ -636,17 +625,19 @@ class ModelServing:
         try:
             summary = self.model.summary2().tables[1]
 
-            importance_df = pd.DataFrame({
-                'feature': summary.index[1:],
-                'coefficient': summary['Coef.'].values[1:],
-                'std_error': summary['Std.Err.'].values[1:],
-                'p_value': summary['P>|z|'].values[1:],
-                'significant': summary['P>|z|'].values[1:] < 0.05
-            })
+            importance_df = pd.DataFrame(
+                {
+                    "feature": summary.index[1:],
+                    "coefficient": summary["Coef."].values[1:],
+                    "std_error": summary["Std.Err."].values[1:],
+                    "p_value": summary["P>|z|"].values[1:],
+                    "significant": summary["P>|z|"].values[1:] < 0.05,
+                }
+            )
 
-            importance_df['odds_ratio'] = np.exp(importance_df['coefficient'])
+            importance_df["odds_ratio"] = np.exp(importance_df["coefficient"])
 
-            return importance_df.sort_values('p_value')
+            return importance_df.sort_values("p_value")
 
         except (KeyError, IndexError, AttributeError) as e:
             logger.error(f"Failed to extract feature importance: {e}")
@@ -667,7 +658,7 @@ def main_example():
         random_seed=42,
         test_size=0.2,
         min_predictors=1,
-        selection_strategy=ModelSelectionStrategy.RANDOM
+        selection_strategy=ModelSelectionStrategy.RANDOM,
     )
     print(f"Config created: {config.max_iterations} iterations, seed={config.random_seed}")
 
@@ -682,12 +673,19 @@ def main_example():
     print(f"Data loaded: {len(data)} rows, {len(data.columns)} columns")
 
     # Select numeric columns for the model
-    numeric_cols = ['duration_credit', 'amount_credit', 'effort_rate',
-                    'home_old', 'age', 'nb_credits', 'nb_of_dependants']
+    numeric_cols = [
+        "duration_credit",
+        "amount_credit",
+        "effort_rate",
+        "home_old",
+        "age",
+        "nb_credits",
+        "nb_of_dependants",
+    ]
     available_numeric = [col for col in numeric_cols if col in data.columns]
 
     # Keep only numeric features and target
-    data = data[available_numeric + ['presence_unpaid']].dropna()
+    data = data[available_numeric + ["presence_unpaid"]].dropna()
     config.predictors = available_numeric
     print(f"Predictive variables: {config.predictors}")
     train_data, test_data = selector.prepare_data(data)
@@ -719,7 +717,7 @@ def main_example():
     print(f"Models tested: {summary['total_models_evaluated']}")
     print(f"Variables: {', '.join(summary['best_model']['predictors'])}")
     print("\nPerformance:")
-    metrics = summary['best_model']['metrics']
+    metrics = summary["best_model"]["metrics"]
     print(f"  AUC: {metrics['auc']:.4f}")
     print(f"  Accuracy: {metrics['accuracy']:.4f}")
     print(f"  Precision: {metrics['precision']:.4f}")
@@ -727,8 +725,8 @@ def main_example():
     print(f"  F1-Score: {metrics['f1_score']:.4f}")
 
     # Save summary
-    Path('reports').mkdir(exist_ok=True)
-    with open('reports/model_summary.json', 'w') as f:
+    Path("reports").mkdir(exist_ok=True)
+    with open("reports/model_summary.json", "w") as f:
         f.write(json.dumps(summary, indent=2, default=str))
     print("\nSummary saved: reports/model_summary.json")
 
@@ -736,9 +734,9 @@ def main_example():
     print("\n[7/8] Model comparison...")
     comparison = selector.get_model_comparison()
     print("\n=== TOP 10 MODELS ===")
-    print(comparison.head(10)[['num_predictors', 'aic', 'auc', 'f1_score']])
+    print(comparison.head(10)[["num_predictors", "aic", "auc", "f1_score"]])
 
-    comparison.to_csv('reports/model_comparison.csv', index=False)
+    comparison.to_csv("reports/model_comparison.csv", index=False)
     print("\nComparison saved: reports/model_comparison.csv")
 
     # 8. Test serving
@@ -751,7 +749,7 @@ def main_example():
             best_model.predictors[0]: 35,
             best_model.predictors[1]: 45000,
             best_model.predictors[2]: 12000,
-            best_model.predictors[3]: 2
+            best_model.predictors[3]: 2,
         }
     else:
         client_test = {p: 1 for p in best_model.predictors}
@@ -761,8 +759,10 @@ def main_example():
     print("\n=== PREDICTION TEST ===")
     print(f"  Client: {client_test}")
     print(f"  Default probability: {prediction['probability']:.2%}")
-    print(f"  Predicted class: {prediction['predicted_class']} "
-          f"({'Default' if prediction['predicted_class'] == 1 else 'Good payer'})")
+    print(
+        f"  Predicted class: {prediction['predicted_class']} "
+        f"({'Default' if prediction['predicted_class'] == 1 else 'Good payer'})"
+    )
     print(f"  Confidence: {prediction['confidence']:.2%}")
 
     print("\n" + "=" * 60)
