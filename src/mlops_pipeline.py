@@ -4,6 +4,8 @@ MLOps Pipeline with Model Versioning and A/B Testing
 Advanced MLOps features for production model management.
 """
 
+from __future__ import annotations
+
 import os
 import json
 import hashlib
@@ -966,15 +968,15 @@ class ModelTrainerPipeline:
 async def main():
     """Example usage of MLOps pipeline."""
 
-    # Initialize components
+    # Initialize components (use environment variables in production)
     registry = ModelRegistry(
-        database_url="postgresql://user:password@localhost/mlops",
+        database_url=os.environ.get("DATABASE_URL", "postgresql://user:password@localhost/mlops"),
         storage_backend="s3",
         storage_config={
-            "bucket": "model-registry",
-            "access_key": "your_access_key",
-            "secret_key": "your_secret_key",
-            "region": "us-east-1",
+            "bucket": os.environ.get("S3_BUCKET", "model-registry"),
+            "access_key": os.environ.get("AWS_ACCESS_KEY_ID", ""),
+            "secret_key": os.environ.get("AWS_SECRET_ACCESS_KEY", ""),
+            "region": os.environ.get("AWS_REGION", "us-east-1"),
         },
     )
 
