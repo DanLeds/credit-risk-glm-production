@@ -283,12 +283,12 @@ class GLMModelSelector:
         best_model = None
 
         for iteration in range(self.config.max_iterations):
-            # Random number of predictors
+            # Random number of predictors (not for security, ML model exploration)
             max_k = self.config.max_predictors or len(self.config.predictors)
-            k = random.randint(self.config.min_predictors, min(max_k, len(self.config.predictors)))
+            k = random.randint(self.config.min_predictors, min(max_k, len(self.config.predictors)))  # nosec B311
 
-            # Random selection of predictors
-            selected_predictors = random.sample(self.config.predictors, k)
+            # Random selection of predictors (not for security, ML model exploration)
+            selected_predictors = random.sample(self.config.predictors, k)  # nosec B311
 
             # Fit model
             try:

@@ -8,6 +8,7 @@ import os
 import hashlib
 import json
 import logging
+import tempfile
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
@@ -429,8 +430,8 @@ class FeatureStore:
         Returns:
             DataFrame with features
         """
-        # Check cache
-        cache_key = f"features:{hashlib.md5(str(entity_ids + feature_names).encode()).hexdigest()}"
+        # Check cache (MD5 used for cache key only, not security)
+        cache_key = f"features:{hashlib.md5(str(entity_ids + feature_names).encode(), usedforsecurity=False).hexdigest()}"
         cached = self.redis_client.get(cache_key)
 
         if cached:
@@ -845,7 +846,8 @@ class DataPipelineOrchestrator:
         data["event_timestamp"] = pd.Timestamp.now()
 
         # Save to parquet for feature store
-        output_path = config.get("feature_store_path", "/tmp/features.parquet")
+        default_path = os.path.join(tempfile.gettempdir(), "features.parquet")
+        output_path = config.get("feature_store_path", default_path)
         await loop.run_in_executor(self.executor, data.to_parquet, output_path)
 
         # Register features if needed
@@ -930,7 +932,7 @@ async def main():
         },
         "target_column": "target",
         "reference_data_path": None,  # Would be actual path in production
-        "feature_store_path": "/tmp/features.parquet",
+        "feature_store_path": os.path.join(tempfile.gettempdir(), "features.parquet"),
         "register_features": True,
         "entity_name": "customer",
     }
