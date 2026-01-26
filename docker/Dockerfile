@@ -18,8 +18,9 @@ RUN pip install --no-cache-dir --upgrade \
 # Copy requirements
 COPY requirements.txt .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir --user -r requirements.txt
+# Install Python dependencies (packaging needed explicitly for limits/flask-limiter)
+RUN pip install --no-cache-dir --user packaging && \
+    pip install --no-cache-dir --user -r requirements.txt
 
 # Production stage
 FROM python:3.10.13-slim-bookworm
@@ -37,6 +38,9 @@ RUN useradd -m -u 1000 modeluser && \
 # Copy Python dependencies from builder
 COPY --from=builder --chown=modeluser:modeluser /root/.local /home/modeluser/.local
 
+# Install packaging in production stage (required by limits/flask-limiter)
+RUN pip install --no-cache-dir packaging
+
 # Copy application code
 COPY --chown=modeluser:modeluser src/ ./src/
 COPY --chown=modeluser:modeluser api/ ./api/
@@ -49,6 +53,7 @@ ENV PATH=/home/modeluser/.local/bin:$PATH
 
 # Environment variables
 ENV PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
     MODEL_PATH=/app/models/glm_model.joblib \
     PORT=5000 \
     FLASK_ENV=production
@@ -60,4 +65,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 EXPOSE 5000
 
 # Run the API
-CMD ["python", "-m", "api.app"]
+CMD ["python", "/app/api/app.py"]
