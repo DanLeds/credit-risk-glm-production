@@ -28,8 +28,8 @@ spec:
         fsGroup: 1000
       containers:
       - name: credit-risk-api
-        image: ghcr.io/yourorg/credit-risk-glm:latest
-        imagePullPolicy: Always
+        image: credit-risk-glm:v1.0.0
+        imagePullPolicy: Never
         securityContext:
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
