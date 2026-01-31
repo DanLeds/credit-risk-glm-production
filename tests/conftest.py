@@ -6,7 +6,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from unittest.mock import Mock, MagicMock, patch
 import json
 
@@ -340,7 +340,7 @@ def sample_usage_data():
 
     for i in range(168):  # 1 week hourly data
         usage = ResourceUsage(
-            timestamp=datetime.utcnow() - timedelta(hours=168 - i),
+            timestamp=datetime.now(timezone.utc) - timedelta(hours=168 - i),
             cpu_usage=50 + np.random.randn() * 20,
             memory_usage=4 + np.random.randn() * 1,
             storage_usage=100,

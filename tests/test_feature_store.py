@@ -4,7 +4,7 @@ Unit tests for Feature Store and Data Validation Pipeline
 
 import sys
 import unittest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, patch, MagicMock
 
 import numpy as np
@@ -286,8 +286,8 @@ class TestFeatureStore(unittest.TestCase):
 
         store = FeatureStore(repo_path="./test_repo")
 
-        start_date = datetime.utcnow() - timedelta(days=1)
-        end_date = datetime.utcnow()
+        start_date = datetime.now(timezone.utc) - timedelta(days=1)
+        end_date = datetime.now(timezone.utc)
 
         store.materialize_features(start_date, end_date)
 
