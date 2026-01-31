@@ -77,6 +77,16 @@ disable_error_code = ["misc", "valid-type"]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-v --cov=src --cov-report=html --cov-report=term-missing"
+filterwarnings = [
+    # Ignore statsmodels numerical warnings during model training
+    "ignore::statsmodels.tools.sm_exceptions.PerfectSeparationWarning",
+    "ignore:divide by zero:RuntimeWarning:statsmodels",
+    "ignore:invalid value encountered:RuntimeWarning:statsmodels",
+    "ignore:overflow encountered:RuntimeWarning:statsmodels",
+    # Ignore Flask extension deprecation warnings
+    "ignore:Using the initialization functions:DeprecationWarning:flask_caching",
+    "ignore:Using the in-memory storage:UserWarning:flask_limiter",
+]
 
 [tool.coverage.run]
 branch = true

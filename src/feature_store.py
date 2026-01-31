@@ -9,7 +9,7 @@ import hashlib
 import json
 import logging
 import tempfile
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
 import asyncio
@@ -48,7 +48,7 @@ class DataQualityIssue(Base):
     __tablename__ = "data_quality_issues"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    timestamp = Column(DateTime, default=datetime.utcnow)
+    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     dataset_name = Column(SAString)
     issue_type = Column(SAString)
     severity = Column(SAString)  # critical, warning, info
@@ -63,7 +63,7 @@ class FeatureStatistics(Base):
     __tablename__ = "feature_statistics"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    timestamp = Column(DateTime, default=datetime.utcnow)
+    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     feature_name = Column(SAString)
     mean = Column(Float)
     std = Column(Float)
@@ -216,13 +216,13 @@ class DataValidator:
         results = self.ge_context.run_validation_operator(
             "action_list_operator",
             assets_to_validate=[batch_request],
-            run_id=f"{suite_name}_{datetime.utcnow().isoformat()}",
+            run_id=f"{suite_name}_{datetime.now(timezone.utc).isoformat()}",
         )
 
         # Process results
         validation_summary = {
             "success": results.success,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "suite_name": suite_name,
             "statistics": {
                 "evaluated_expectations": results.statistics.evaluated_expectations,
@@ -295,7 +295,7 @@ class DataValidator:
 
         # Extract key metrics
         drift_summary = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "dataset_drift": report_dict["metrics"][0]["result"]["dataset_drift"],
             "share_of_drifted_columns": report_dict["metrics"][0]["result"][
                 "share_of_drifted_columns"
@@ -735,7 +735,7 @@ class DataPipelineOrchestrator:
         """
         stages: Dict[str, Any] = {}
         results: Dict[str, Any] = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "status": "started",
             "stages": stages,
         }
@@ -870,8 +870,8 @@ class DataPipelineOrchestrator:
         await loop.run_in_executor(
             self.executor,
             self.feature_store.materialize_features,
-            datetime.utcnow() - timedelta(days=1),
-            datetime.utcnow(),
+            datetime.now(timezone.utc) - timedelta(days=1),
+            datetime.now(timezone.utc),
         )
 
         return {

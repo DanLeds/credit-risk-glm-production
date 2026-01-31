@@ -9,7 +9,7 @@ import time
 import json
 import asyncio
 import statistics
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass
 import random
@@ -403,7 +403,7 @@ class BenchmarkSuite:
         print(f"Running Benchmark: {test_name}")
         print(f"{'='*60}\n")
 
-        results = {"test_name": test_name, "timestamp": datetime.utcnow().isoformat(), "tests": []}
+        results = {"test_name": test_name, "timestamp": datetime.now(timezone.utc).isoformat(), "tests": []}
 
         for config in test_configs:
             print(f"Running: {config['name']}")

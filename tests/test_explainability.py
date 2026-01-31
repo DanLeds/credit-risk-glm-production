@@ -4,7 +4,7 @@ Tests for the explainability module.
 
 import sys
 from unittest.mock import MagicMock, patch
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import tempfile
 import os
 
@@ -126,7 +126,7 @@ def sample_usage_data():
     data = []
     for i in range(168):  # 1 week hourly data
         usage = ResourceUsage(
-            timestamp=datetime.utcnow() - timedelta(hours=168 - i),
+            timestamp=datetime.now(timezone.utc) - timedelta(hours=168 - i),
             cpu_usage=50 + np.random.randn() * 20,
             memory_usage=4 + np.random.randn() * 1,
             storage_usage=100,
@@ -479,7 +479,7 @@ class TestResourceUsage:
     def test_resource_usage_creation(self):
         """Test creation with required fields."""
         usage = ResourceUsage(
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             cpu_usage=75.5,
             memory_usage=8.0,
             storage_usage=100.0,
@@ -494,7 +494,7 @@ class TestResourceUsage:
     def test_resource_usage_with_optional(self):
         """Test creation with optional fields."""
         usage = ResourceUsage(
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             cpu_usage=50.0,
             memory_usage=4.0,
             storage_usage=50.0,
@@ -586,7 +586,7 @@ class TestCloudCostOptimizer:
             optimizer.cloudwatch = mock_cloudwatch
 
             result = optimizer.collect_usage_metrics(
-                "i-1234567890", datetime.utcnow() - timedelta(hours=1), datetime.utcnow()
+                "i-1234567890", datetime.now(timezone.utc) - timedelta(hours=1), datetime.now(timezone.utc)
             )
 
             assert isinstance(result, ResourceUsage)
@@ -603,7 +603,7 @@ class TestCloudCostOptimizer:
             optimizer.cloudwatch = mock_cloudwatch
 
             result = optimizer.collect_usage_metrics(
-                "i-1234567890", datetime.utcnow() - timedelta(hours=1), datetime.utcnow()
+                "i-1234567890", datetime.now(timezone.utc) - timedelta(hours=1), datetime.now(timezone.utc)
             )
 
             assert result.cpu_usage == 0
@@ -650,7 +650,7 @@ class TestCloudCostOptimizer:
             # Create low CPU usage data
             usage_data = [
                 ResourceUsage(
-                    timestamp=datetime.utcnow(),
+                    timestamp=datetime.now(timezone.utc),
                     cpu_usage=20.0,
                     memory_usage=2.0,
                     storage_usage=50.0,
@@ -674,7 +674,7 @@ class TestCloudCostOptimizer:
             # Create high CPU usage data
             usage_data = [
                 ResourceUsage(
-                    timestamp=datetime.utcnow(),
+                    timestamp=datetime.now(timezone.utc),
                     cpu_usage=85.0,
                     memory_usage=8.0,
                     storage_usage=50.0,
@@ -714,7 +714,7 @@ class TestCloudCostOptimizer:
             # Create high CPU usage data
             usage_data = [
                 ResourceUsage(
-                    timestamp=datetime.utcnow(),
+                    timestamp=datetime.now(timezone.utc),
                     cpu_usage=85.0,
                     memory_usage=8.0,
                     storage_usage=50.0,
@@ -743,7 +743,7 @@ class TestCloudCostOptimizer:
             # Create low CPU usage data
             usage_data = [
                 ResourceUsage(
-                    timestamp=datetime.utcnow(),
+                    timestamp=datetime.now(timezone.utc),
                     cpu_usage=25.0,
                     memory_usage=2.0,
                     storage_usage=50.0,
@@ -804,7 +804,7 @@ class TestCloudCostOptimizer:
             # Create low usage data
             usage_data = [
                 ResourceUsage(
-                    timestamp=datetime.utcnow(),
+                    timestamp=datetime.now(timezone.utc),
                     cpu_usage=20.0,
                     memory_usage=2.0,
                     storage_usage=50.0,
@@ -920,7 +920,7 @@ class TestAzureProvider:
             optimizer = CloudCostOptimizer(cloud_provider="azure")
 
             result = optimizer.collect_usage_metrics(
-                "resource-id", datetime.utcnow() - timedelta(hours=1), datetime.utcnow()
+                "resource-id", datetime.now(timezone.utc) - timedelta(hours=1), datetime.now(timezone.utc)
             )
 
             assert isinstance(result, ResourceUsage)
@@ -942,7 +942,7 @@ class TestGCPProvider:
             optimizer = CloudCostOptimizer(cloud_provider="gcp")
 
             result = optimizer.collect_usage_metrics(
-                "resource-id", datetime.utcnow() - timedelta(hours=1), datetime.utcnow()
+                "resource-id", datetime.now(timezone.utc) - timedelta(hours=1), datetime.now(timezone.utc)
             )
 
             assert isinstance(result, ResourceUsage)
@@ -977,7 +977,7 @@ class TestEdgeCases:
 
             usage_data = [
                 ResourceUsage(
-                    timestamp=datetime.utcnow(),
+                    timestamp=datetime.now(timezone.utc),
                     cpu_usage=50.0,
                     memory_usage=4.0,
                     storage_usage=50.0,
@@ -1105,7 +1105,7 @@ class TestCostEstimationEdgeCases:
 
             usage_data = [
                 ResourceUsage(
-                    timestamp=datetime.utcnow(),
+                    timestamp=datetime.now(timezone.utc),
                     cpu_usage=50.0,
                     memory_usage=4.0,
                     storage_usage=50.0,
@@ -1127,7 +1127,7 @@ class TestCostEstimationEdgeCases:
 
             usage_data = [
                 ResourceUsage(
-                    timestamp=datetime.utcnow(),
+                    timestamp=datetime.now(timezone.utc),
                     cpu_usage=-10.0,  # Shouldn't happen but test robustness
                     memory_usage=4.0,
                     storage_usage=50.0,
@@ -1149,7 +1149,7 @@ class TestCostEstimationEdgeCases:
 
             usage_data = [
                 ResourceUsage(
-                    timestamp=datetime.utcnow(),
+                    timestamp=datetime.now(timezone.utc),
                     cpu_usage=100.0,  # Max CPU
                     memory_usage=128.0,  # High memory
                     storage_usage=10000.0,  # 10TB
@@ -1172,7 +1172,7 @@ class TestCostEstimationEdgeCases:
             # Low CPU usage should trigger downsizing recommendation
             usage_data = [
                 ResourceUsage(
-                    timestamp=datetime.utcnow(),
+                    timestamp=datetime.now(timezone.utc),
                     cpu_usage=15.0,  # Very low
                     memory_usage=2.0,
                     storage_usage=50.0,
@@ -1194,7 +1194,7 @@ class TestCostEstimationEdgeCases:
 
             usage_data = [
                 ResourceUsage(
-                    timestamp=datetime.utcnow(),
+                    timestamp=datetime.now(timezone.utc),
                     cpu_usage=50.0,
                     memory_usage=4.0,
                     storage_usage=100.0,
@@ -1217,7 +1217,7 @@ class TestCostEstimationEdgeCases:
 
             usage_data = [
                 ResourceUsage(
-                    timestamp=datetime.utcnow(),
+                    timestamp=datetime.now(timezone.utc),
                     cpu_usage=50.0,
                     memory_usage=4.0,
                     storage_usage=100.0,
@@ -1264,7 +1264,7 @@ class TestCloudProviderInitFailures:
             # Then try to use unsupported provider for metrics
             with pytest.raises(ValueError, match="Unsupported cloud provider"):
                 optimizer.cloud_provider = "invalid"
-                optimizer.collect_usage_metrics("test", datetime.utcnow(), datetime.utcnow())
+                optimizer.collect_usage_metrics("test", datetime.now(timezone.utc), datetime.now(timezone.utc))
 
 
 class TestReportGenerationEdgeCases:
@@ -1376,7 +1376,7 @@ class TestReportGenerationEdgeCases:
             # Minimal data
             usage_data = [
                 ResourceUsage(
-                    timestamp=datetime.utcnow(),
+                    timestamp=datetime.now(timezone.utc),
                     cpu_usage=50.0,
                     memory_usage=4.0,
                     storage_usage=100.0,

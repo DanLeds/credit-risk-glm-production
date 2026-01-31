@@ -5,7 +5,7 @@ Advanced model interpretation and cloud resource cost management.
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, field
 
@@ -59,7 +59,7 @@ class ExplanationResult:
     """Container for model explanation results."""
 
     explanation_type: str
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     global_importance: Optional[Dict[str, float]] = None
     local_explanations: Optional[List[Dict[str, Any]]] = None
     visualizations: Optional[List[Any]] = None
@@ -513,7 +513,7 @@ class ModelExplainer:
         </html>
         """
 
-        html_content = html_content.format(timestamp=datetime.utcnow().isoformat())
+        html_content = html_content.format(timestamp=datetime.now(timezone.utc).isoformat())
 
         # Save report
         with open(output_path, "w") as f:
@@ -1055,7 +1055,7 @@ class CloudCostOptimizer:
         </head>
         <body>
             <h1>Cloud Cost Optimization Report</h1>
-            <p>Generated: {datetime.utcnow().isoformat()}</p>
+            <p>Generated: {datetime.now(timezone.utc).isoformat()}</p>
             
             <h2>Cost Summary</h2>
             <p>Daily Cost: <span class="cost">${daily_cost.total_cost:.2f}</span></p>
@@ -1154,7 +1154,7 @@ def main():
     usage_data = []
     for i in range(168):  # 1 week of hourly data
         usage = ResourceUsage(
-            timestamp=datetime.utcnow() - timedelta(hours=168 - i),
+            timestamp=datetime.now(timezone.utc) - timedelta(hours=168 - i),
             cpu_usage=50 + np.random.randn() * 20,
             memory_usage=4 + np.random.randn() * 1,
             storage_usage=100,

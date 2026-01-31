@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 import json
 import hashlib
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field, asdict
@@ -48,7 +48,7 @@ class ModelVersion(Base):
 
     id = Column(SAString, primary_key=True)
     version = Column(SAString, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     model_path = Column(SAString)
     config = Column(JSON)
     metrics = Column(JSON)
@@ -65,7 +65,7 @@ class PredictionLog(Base):
 
     id = Column(SAString, primary_key=True)
     model_version = Column(SAString)
-    timestamp = Column(DateTime, default=datetime.utcnow)
+    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     features = Column(JSON)
     prediction = Column(Float)
     predicted_class = Column(Integer)
@@ -81,7 +81,7 @@ class ModelPerformance(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     model_version = Column(SAString)
-    timestamp = Column(DateTime, default=datetime.utcnow)
+    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     metric_name = Column(SAString)
     metric_value = Column(Float)
     window_size = Column(Integer)  # Hours
@@ -218,7 +218,7 @@ class ModelRegistry:
 
     def _generate_model_id(self, version: str) -> str:
         """Generate unique model ID."""
-        timestamp = datetime.utcnow().isoformat()
+        timestamp = datetime.now(timezone.utc).isoformat()
         content = f"{version}_{timestamp}"
         return hashlib.sha256(content.encode()).hexdigest()[:16]
 
@@ -446,7 +446,7 @@ class Experiment:
     confidence_level: float
     registry: ModelRegistry
 
-    start_time: datetime = field(default_factory=datetime.utcnow)
+    start_time: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     end_time: Optional[datetime] = None
     status: str = "created"
 
@@ -479,7 +479,7 @@ class Experiment:
 
     def stop(self):
         """Stop the experiment."""
-        self.end_time = datetime.utcnow()
+        self.end_time = datetime.now(timezone.utc)
         self.status = "completed"
 
         # Reset traffic
@@ -668,7 +668,7 @@ class PerformanceMonitor:
             response_time_ms: Response time in milliseconds
         """
         prediction_id = hashlib.sha256(
-            f"{model_version}_{datetime.utcnow().isoformat()}".encode()
+            f"{model_version}_{datetime.now(timezone.utc).isoformat()}".encode()
         ).hexdigest()[:16]
 
         with self.registry.SessionLocal() as session:
@@ -691,7 +691,7 @@ class PerformanceMonitor:
         """Update performance metrics for a model."""
         with self.registry.SessionLocal() as session:
             # Calculate metrics for last hour
-            one_hour_ago = datetime.utcnow() - timedelta(hours=1)
+            one_hour_ago = datetime.now(timezone.utc) - timedelta(hours=1)
 
             predictions = (
                 session.query(PredictionLog)
@@ -748,7 +748,7 @@ class PerformanceMonitor:
             Dictionary of metrics
         """
         with self.registry.SessionLocal() as session:
-            cutoff_time = datetime.utcnow() - timedelta(hours=window_hours)
+            cutoff_time = datetime.now(timezone.utc) - timedelta(hours=window_hours)
 
             metrics = (
                 session.query(ModelPerformance)
