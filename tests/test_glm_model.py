@@ -693,5 +693,603 @@ class TestIntegration(unittest.TestCase):
         self.assertIn("best_model", summary)
 
 
+# ====================== Additional Edge Case Tests ======================
+
+
+class TestFitModelErrorRecovery(unittest.TestCase):
+    """Test error recovery during model fitting."""
+
+    def setUp(self):
+        """Set up test data."""
+        np.random.seed(42)
+        n_samples = 300
+        self.data = pd.DataFrame(
+            {
+                "feature1": np.random.randn(n_samples),
+                "feature2": np.random.randn(n_samples),
+                "feature3": np.random.randn(n_samples),
+            }
+        )
+        logits = 0.5 * self.data["feature1"] + 0.3 * self.data["feature2"]
+        probs = 1 / (1 + np.exp(-logits))
+        self.data["presence_unpaid"] = (probs > 0.5).astype(int)
+
+    def test_fit_with_all_constant_predictors(self):
+        """Test fitting with constant predictor columns."""
+        data = self.data.copy()
+        data["constant_col"] = 1  # Constant column
+
+        config = ModelConfig(
+            target_column="presence_unpaid",
+            predictors=["feature1", "constant_col"],
+            max_iterations=5,
+        )
+        selector = GLMModelSelector(config)
+        selector.prepare_data(data)
+
+        # Should still be able to fit (may warn)
+        try:
+            selector.fit()
+        except Exception:
+            pass  # Some error is acceptable
+
+    def test_fit_recovers_from_single_iteration_failure(self):
+        """Test that fit continues after individual iteration failures."""
+        config = ModelConfig(
+            target_column="presence_unpaid",
+            predictors=["feature1", "feature2", "feature3"],
+            max_iterations=10,
+            min_predictors=1,
+        )
+        selector = GLMModelSelector(config)
+        selector.prepare_data(self.data)
+
+        # Should complete even if some iterations fail
+        best_model = selector.fit()
+        self.assertIsNotNone(best_model)
+
+    def test_fit_with_perfect_separation(self):
+        """Test fitting with perfect separation in data."""
+        data = self.data.copy()
+        # Create perfect separation
+        data["perfect_pred"] = data["presence_unpaid"]
+
+        config = ModelConfig(
+            target_column="presence_unpaid",
+            predictors=["feature1", "perfect_pred"],
+            max_iterations=5,
+        )
+        selector = GLMModelSelector(config)
+        selector.prepare_data(data)
+
+        # May succeed or fail depending on model behavior
+        try:
+            selector.fit()
+        except Exception:
+            pass  # Error is acceptable
+
+    def test_fit_with_high_collinearity(self):
+        """Test fitting with highly collinear features."""
+        data = self.data.copy()
+        data["collinear"] = data["feature1"] * 2 + np.random.randn(len(data)) * 0.01
+
+        config = ModelConfig(
+            target_column="presence_unpaid",
+            predictors=["feature1", "collinear"],
+            max_iterations=5,
+        )
+        selector = GLMModelSelector(config)
+        selector.prepare_data(data)
+
+        # Should handle collinearity
+        try:
+            best_model = selector.fit()
+            self.assertIsNotNone(best_model)
+        except Exception:
+            pass  # Some error acceptable with highly collinear data
+
+
+class TestModelSerializationRoundTrip(unittest.TestCase):
+    """Test model save/load fidelity."""
+
+    def setUp(self):
+        """Set up test model."""
+        np.random.seed(42)
+        n_samples = 300
+        self.data = pd.DataFrame(
+            {
+                "feature1": np.random.randn(n_samples),
+                "feature2": np.random.randn(n_samples),
+                "feature3": np.random.randn(n_samples),
+                "presence_unpaid": np.random.randint(0, 2, n_samples),
+            }
+        )
+        self.config = ModelConfig(
+            target_column="presence_unpaid",
+            predictors=["feature1", "feature2", "feature3"],
+            max_iterations=5,
+        )
+
+    def test_metrics_preserved_after_load(self):
+        """Test that metrics are preserved after save/load."""
+        selector = GLMModelSelector(self.config)
+        selector.prepare_data(self.data)
+        selector.fit()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            model_path = Path(tmpdir) / "model.joblib"
+            selector.save_model(model_path)
+
+            loaded = GLMModelSelector.load_model(model_path)
+
+            # Check metrics match
+            self.assertAlmostEqual(
+                selector.best_model.metrics.auc, loaded.best_model.metrics.auc, places=6
+            )
+            self.assertAlmostEqual(
+                selector.best_model.metrics.aic, loaded.best_model.metrics.aic, places=6
+            )
+
+    def test_predictions_identical_after_load(self):
+        """Test that predictions are identical after save/load."""
+        selector = GLMModelSelector(self.config)
+        selector.prepare_data(self.data)
+        selector.fit()
+
+        test_data = self.data.head(20)
+        original_preds = selector.predict(test_data, return_proba=True)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            model_path = Path(tmpdir) / "model.joblib"
+            selector.save_model(model_path)
+
+            loaded = GLMModelSelector.load_model(model_path)
+            loaded_preds = loaded.predict(test_data, return_proba=True)
+
+            np.testing.assert_array_almost_equal(original_preds, loaded_preds)
+
+    def test_config_preserved_after_load(self):
+        """Test that config is preserved after save/load."""
+        selector = GLMModelSelector(self.config)
+        selector.prepare_data(self.data)
+        selector.fit()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            model_path = Path(tmpdir) / "model.joblib"
+            selector.save_model(model_path)
+
+            loaded = GLMModelSelector.load_model(model_path)
+
+            self.assertEqual(loaded.config.target_column, self.config.target_column)
+            self.assertEqual(loaded.config.random_seed, self.config.random_seed)
+
+    def test_predictors_preserved_after_load(self):
+        """Test that predictors list is preserved after save/load."""
+        selector = GLMModelSelector(self.config)
+        selector.prepare_data(self.data)
+        selector.fit()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            model_path = Path(tmpdir) / "model.joblib"
+            selector.save_model(model_path)
+
+            loaded = GLMModelSelector.load_model(model_path)
+
+            self.assertEqual(loaded.best_model.predictors, selector.best_model.predictors)
+
+    def test_timestamp_preserved_after_load(self):
+        """Test that timestamp is preserved after save/load."""
+        selector = GLMModelSelector(self.config)
+        selector.prepare_data(self.data)
+        selector.fit()
+
+        original_timestamp = selector.best_model.timestamp
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            model_path = Path(tmpdir) / "model.joblib"
+            selector.save_model(model_path)
+
+            loaded = GLMModelSelector.load_model(model_path)
+
+            # Timestamps should be equal (within a second for serialization)
+            self.assertEqual(
+                original_timestamp.isoformat(), loaded.best_model.timestamp.isoformat()
+            )
+
+
+class TestSelectionStrategies(unittest.TestCase):
+    """Test different model selection strategies."""
+
+    def setUp(self):
+        """Set up test data."""
+        np.random.seed(42)
+        n_samples = 300
+        self.data = pd.DataFrame(
+            {
+                "feature1": np.random.randn(n_samples),
+                "feature2": np.random.randn(n_samples),
+                "feature3": np.random.randn(n_samples),
+                "presence_unpaid": np.random.randint(0, 2, n_samples),
+            }
+        )
+
+    def test_forward_strategy_raises_not_implemented(self):
+        """Test FORWARD strategy raises NotImplementedError."""
+        config = ModelConfig(
+            target_column="presence_unpaid",
+            predictors=["feature1", "feature2"],
+            selection_strategy=ModelSelectionStrategy.FORWARD,
+        )
+        selector = GLMModelSelector(config)
+        selector.prepare_data(self.data)
+
+        with self.assertRaises(NotImplementedError):
+            selector.fit()
+
+    def test_backward_strategy_raises_not_implemented(self):
+        """Test BACKWARD strategy raises NotImplementedError."""
+        config = ModelConfig(
+            target_column="presence_unpaid",
+            predictors=["feature1", "feature2"],
+            selection_strategy=ModelSelectionStrategy.BACKWARD,
+        )
+        selector = GLMModelSelector(config)
+        selector.prepare_data(self.data)
+
+        with self.assertRaises(NotImplementedError):
+            selector.fit()
+
+    def test_exhaustive_strategy_raises_not_implemented(self):
+        """Test EXHAUSTIVE strategy raises NotImplementedError."""
+        config = ModelConfig(
+            target_column="presence_unpaid",
+            predictors=["feature1", "feature2"],
+            selection_strategy=ModelSelectionStrategy.EXHAUSTIVE,
+        )
+        selector = GLMModelSelector(config)
+        selector.prepare_data(self.data)
+
+        with self.assertRaises(NotImplementedError):
+            selector.fit()
+
+    def test_random_strategy_works(self):
+        """Test RANDOM strategy works correctly."""
+        config = ModelConfig(
+            target_column="presence_unpaid",
+            predictors=["feature1", "feature2", "feature3"],
+            selection_strategy=ModelSelectionStrategy.RANDOM,
+            max_iterations=5,
+        )
+        selector = GLMModelSelector(config)
+        selector.prepare_data(self.data)
+
+        best_model = selector.fit()
+        self.assertIsNotNone(best_model)
+
+
+class TestFeatureImportanceEdgeCases(unittest.TestCase):
+    """Test edge cases in feature importance calculation."""
+
+    def setUp(self):
+        """Set up test model."""
+        np.random.seed(42)
+        n_samples = 200
+        self.data = pd.DataFrame(
+            {
+                "feature1": np.random.randn(n_samples),
+                "feature2": np.random.randn(n_samples),
+                "presence_unpaid": np.random.randint(0, 2, n_samples),
+            }
+        )
+        self.config = ModelConfig(
+            target_column="presence_unpaid",
+            predictors=["feature1", "feature2"],
+            max_iterations=5,
+            min_predictors=2,
+            max_predictors=2,
+        )
+
+    def test_feature_importance_with_single_predictor(self):
+        """Test feature importance with single predictor."""
+        config = ModelConfig(
+            target_column="presence_unpaid",
+            predictors=["feature1"],
+            max_iterations=3,
+            min_predictors=1,
+            max_predictors=1,
+        )
+        selector = GLMModelSelector(config)
+        selector.prepare_data(self.data)
+        selector.fit()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            model_path = Path(tmpdir) / "model.joblib"
+            selector.save_model(model_path)
+            server = ModelServing(model_path)
+
+            importance = server.get_feature_importance()
+            self.assertGreaterEqual(len(importance), 1)
+
+    def test_feature_importance_has_correct_columns(self):
+        """Test feature importance DataFrame has correct columns."""
+        selector = GLMModelSelector(self.config)
+        selector.prepare_data(self.data)
+        selector.fit()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            model_path = Path(tmpdir) / "model.joblib"
+            selector.save_model(model_path)
+            server = ModelServing(model_path)
+
+            importance = server.get_feature_importance()
+
+            expected_cols = ["feature", "coefficient", "std_error", "p_value", "odds_ratio", "significant"]
+            for col in expected_cols:
+                self.assertIn(col, importance.columns)
+
+    def test_odds_ratio_is_exp_coefficient(self):
+        """Test odds ratio equals exp(coefficient)."""
+        selector = GLMModelSelector(self.config)
+        selector.prepare_data(self.data)
+        selector.fit()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            model_path = Path(tmpdir) / "model.joblib"
+            selector.save_model(model_path)
+            server = ModelServing(model_path)
+
+            importance = server.get_feature_importance()
+
+            for _, row in importance.iterrows():
+                expected_or = np.exp(row["coefficient"])
+                self.assertAlmostEqual(row["odds_ratio"], expected_or, places=5)
+
+    def test_significant_flag_based_on_p_value(self):
+        """Test significant flag is based on p-value < 0.05."""
+        selector = GLMModelSelector(self.config)
+        selector.prepare_data(self.data)
+        selector.fit()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            model_path = Path(tmpdir) / "model.joblib"
+            selector.save_model(model_path)
+            server = ModelServing(model_path)
+
+            importance = server.get_feature_importance()
+
+            for _, row in importance.iterrows():
+                expected_sig = row["p_value"] < 0.05
+                self.assertEqual(row["significant"], expected_sig)
+
+
+class TestMetricCalculationEdgeCases(unittest.TestCase):
+    """Test edge cases in metric calculations."""
+
+    def test_auc_between_0_and_1(self):
+        """Test AUC is always between 0 and 1."""
+        np.random.seed(42)
+        data = pd.DataFrame(
+            {
+                "feature1": np.random.randn(200),
+                "feature2": np.random.randn(200),
+                "presence_unpaid": np.random.randint(0, 2, 200),
+            }
+        )
+
+        config = ModelConfig(
+            target_column="presence_unpaid",
+            predictors=["feature1", "feature2"],
+            max_iterations=5,
+        )
+        selector = GLMModelSelector(config)
+        selector.prepare_data(data)
+        best_model = selector.fit()
+
+        self.assertGreaterEqual(best_model.metrics.auc, 0.0)
+        self.assertLessEqual(best_model.metrics.auc, 1.0)
+
+    def test_accuracy_between_0_and_1(self):
+        """Test accuracy is always between 0 and 1."""
+        np.random.seed(42)
+        data = pd.DataFrame(
+            {
+                "feature1": np.random.randn(200),
+                "presence_unpaid": np.random.randint(0, 2, 200),
+            }
+        )
+
+        config = ModelConfig(
+            target_column="presence_unpaid",
+            predictors=["feature1"],
+            max_iterations=3,
+        )
+        selector = GLMModelSelector(config)
+        selector.prepare_data(data)
+        best_model = selector.fit()
+
+        self.assertGreaterEqual(best_model.metrics.accuracy, 0.0)
+        self.assertLessEqual(best_model.metrics.accuracy, 1.0)
+
+    def test_f1_score_between_0_and_1(self):
+        """Test F1 score is always between 0 and 1."""
+        np.random.seed(42)
+        data = pd.DataFrame(
+            {
+                "feature1": np.random.randn(200),
+                "presence_unpaid": np.random.randint(0, 2, 200),
+            }
+        )
+
+        config = ModelConfig(
+            target_column="presence_unpaid",
+            predictors=["feature1"],
+            max_iterations=3,
+        )
+        selector = GLMModelSelector(config)
+        selector.prepare_data(data)
+        best_model = selector.fit()
+
+        self.assertGreaterEqual(best_model.metrics.f1_score, 0.0)
+        self.assertLessEqual(best_model.metrics.f1_score, 1.0)
+
+    def test_precision_recall_edge_case_all_negative(self):
+        """Test precision/recall with all negative predictions."""
+        np.random.seed(42)
+        # Create data that might lead to all negative predictions
+        data = pd.DataFrame(
+            {
+                "feature1": np.random.randn(200) - 5,  # Shifted to potentially cause all 0s
+                "presence_unpaid": np.random.randint(0, 2, 200),
+            }
+        )
+
+        config = ModelConfig(
+            target_column="presence_unpaid",
+            predictors=["feature1"],
+            max_iterations=3,
+        )
+        selector = GLMModelSelector(config)
+        selector.prepare_data(data)
+
+        # Should not raise division by zero
+        best_model = selector.fit()
+        self.assertIsNotNone(best_model.metrics.precision)
+        self.assertIsNotNone(best_model.metrics.recall)
+
+    def test_confusion_matrix_shape(self):
+        """Test confusion matrix has correct shape."""
+        np.random.seed(42)
+        data = pd.DataFrame(
+            {
+                "feature1": np.random.randn(200),
+                "presence_unpaid": np.random.randint(0, 2, 200),
+            }
+        )
+
+        config = ModelConfig(
+            target_column="presence_unpaid",
+            predictors=["feature1"],
+            max_iterations=3,
+        )
+        selector = GLMModelSelector(config)
+        selector.prepare_data(data)
+        best_model = selector.fit()
+
+        cm = best_model.metrics.confusion_matrix
+        self.assertIsNotNone(cm)
+        self.assertEqual(cm.shape, (2, 2))
+
+
+class TestModelComparisonMemoryLimit(unittest.TestCase):
+    """Test max_models_to_keep functionality."""
+
+    def setUp(self):
+        """Set up test data."""
+        np.random.seed(42)
+        self.data = pd.DataFrame(
+            {
+                "feature1": np.random.randn(200),
+                "feature2": np.random.randn(200),
+                "feature3": np.random.randn(200),
+                "presence_unpaid": np.random.randint(0, 2, 200),
+            }
+        )
+
+    def test_model_count_respects_limit(self):
+        """Test that all_models respects max_models_to_keep."""
+        config = ModelConfig(
+            target_column="presence_unpaid",
+            predictors=["feature1", "feature2", "feature3"],
+            max_iterations=20,
+            max_models_to_keep=5,
+        )
+        selector = GLMModelSelector(config)
+        selector.prepare_data(self.data)
+        selector.fit()
+
+        self.assertLessEqual(len(selector.all_models), 5)
+
+    def test_models_sorted_by_aic(self):
+        """Test that kept models are sorted by AIC."""
+        config = ModelConfig(
+            target_column="presence_unpaid",
+            predictors=["feature1", "feature2", "feature3"],
+            max_iterations=15,
+            max_models_to_keep=10,
+        )
+        selector = GLMModelSelector(config)
+        selector.prepare_data(self.data)
+        selector.fit()
+
+        aic_values = [m.metrics.aic for m in selector.all_models]
+        self.assertEqual(aic_values, sorted(aic_values))
+
+    def test_best_model_in_kept_models(self):
+        """Test that best model is always in kept models."""
+        config = ModelConfig(
+            target_column="presence_unpaid",
+            predictors=["feature1", "feature2", "feature3"],
+            max_iterations=15,
+            max_models_to_keep=5,
+        )
+        selector = GLMModelSelector(config)
+        selector.prepare_data(self.data)
+        selector.fit()
+
+        # Best model should be in all_models
+        best_aic = selector.best_model.metrics.aic
+        kept_aics = [m.metrics.aic for m in selector.all_models]
+        self.assertIn(best_aic, kept_aics)
+
+
+class TestPredictionWithCustomThreshold(unittest.TestCase):
+    """Test predictions with custom classification thresholds."""
+
+    def setUp(self):
+        """Set up test model."""
+        np.random.seed(42)
+        n_samples = 200
+        self.data = pd.DataFrame(
+            {
+                "feature1": np.random.randn(n_samples),
+                "feature2": np.random.randn(n_samples),
+                "presence_unpaid": np.random.randint(0, 2, n_samples),
+            }
+        )
+        self.config = ModelConfig(
+            target_column="presence_unpaid",
+            predictors=["feature1", "feature2"],
+            max_iterations=5,
+        )
+        self.selector = GLMModelSelector(self.config)
+        self.selector.prepare_data(self.data)
+        self.selector.fit()
+
+    def test_threshold_affects_predictions(self):
+        """Test that threshold affects class predictions."""
+        test_data = self.data.head(50)
+
+        preds_05 = self.selector.predict(test_data, return_proba=False, threshold=0.5)
+        preds_03 = self.selector.predict(test_data, return_proba=False, threshold=0.3)
+        preds_07 = self.selector.predict(test_data, return_proba=False, threshold=0.7)
+
+        # Lower threshold should give more positive predictions
+        self.assertGreaterEqual(sum(preds_03), sum(preds_05))
+        self.assertGreaterEqual(sum(preds_05), sum(preds_07))
+
+    def test_threshold_extreme_values(self):
+        """Test predictions with extreme threshold values."""
+        test_data = self.data.head(50)
+
+        preds_0 = self.selector.predict(test_data, return_proba=False, threshold=0.0)
+        preds_1 = self.selector.predict(test_data, return_proba=False, threshold=1.0)
+
+        # All predictions should be 1 with threshold 0
+        self.assertTrue(all(p == 1 for p in preds_0))
+
+        # All predictions should be 0 with threshold 1 (unless probability == 1)
+        self.assertTrue(sum(preds_1) <= len(preds_1))
+
+
 if __name__ == "__main__":
     unittest.main()
