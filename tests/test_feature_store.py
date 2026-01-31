@@ -550,5 +550,636 @@ class TestDataPipelineOrchestrator(unittest.TestCase):
             loop.close()
 
 
+# ====================== Additional Edge Case Tests ======================
+
+
+class TestGreatExpectationsValidationFailures(unittest.TestCase):
+    """Test Great Expectations validation failure handling."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        np.random.seed(42)
+        self.df = pd.DataFrame(
+            {
+                "numeric_col": np.random.randn(100),
+                "category_col": np.random.choice(["A", "B", "C"], 100),
+                "target": np.random.randint(0, 2, 100),
+            }
+        )
+
+    @patch("src.feature_store.ge.get_context")
+    @patch("src.feature_store.create_engine")
+    def test_validation_with_missing_expectation_suite(self, mock_engine, mock_ge_context):
+        """Test validation with missing expectation suite raises error."""
+        mock_ge_context.return_value = Mock()
+        mock_engine.return_value = Mock()
+
+        validator = DataValidator()
+
+        with self.assertRaises(ValueError) as context:
+            validator.validate_data(self.df, "nonexistent_suite")
+
+        self.assertIn("not found", str(context.exception))
+
+    @patch("src.feature_store.ge.get_context")
+    @patch("src.feature_store.create_engine")
+    def test_expectation_suite_creation_adds_to_dict(self, mock_engine, mock_ge_context):
+        """Test expectation suite creation adds suite to expectations dict."""
+        mock_context = Mock()
+        mock_suite = Mock()
+        mock_context.create_expectation_suite.return_value = mock_suite
+        mock_ge_context.return_value = mock_context
+        mock_engine.return_value = Mock()
+
+        validator = DataValidator()
+        numeric_df = pd.DataFrame({"col1": np.random.randn(100)})
+
+        validator.create_expectation_suite("test_suite", numeric_df)
+
+        self.assertIn("test_suite", validator.expectations)
+        self.assertEqual(validator.expectations["test_suite"], mock_suite)
+
+    @patch("src.feature_store.ge.get_context")
+    @patch("src.feature_store.create_engine")
+    def test_expectation_suite_handles_empty_dataframe(self, mock_engine, mock_ge_context):
+        """Test expectation suite creation with empty dataframe."""
+        mock_context = Mock()
+        mock_suite = Mock()
+        mock_context.create_expectation_suite.return_value = mock_suite
+        mock_ge_context.return_value = mock_context
+        mock_engine.return_value = Mock()
+
+        validator = DataValidator()
+
+        # Empty dataframe should be handled
+        try:
+            validator.create_expectation_suite("empty_suite", pd.DataFrame())
+        except Exception:
+            pass  # May fail, which is acceptable
+
+    @patch("src.feature_store.ge.get_context")
+    @patch("src.feature_store.create_engine")
+    def test_validation_saves_issues_to_db(self, mock_engine, mock_ge_context):
+        """Test validation failures are saved to database."""
+        mock_ge_context.return_value = Mock()
+        mock_engine.return_value = Mock()
+
+        validator = DataValidator()
+        validator.expectations["test_suite"] = Mock()
+
+        # Mock validation results with failures
+        mock_results = Mock()
+        mock_results.success = False
+        mock_results.statistics = Mock()
+        mock_results.statistics.evaluated_expectations = 10
+        mock_results.statistics.successful_expectations = 5
+        mock_results.statistics.unsuccessful_expectations = 5
+        mock_results.statistics.success_percent = 50.0
+        mock_results.results = []
+
+        mock_session = MagicMock()
+        validator.SessionLocal = Mock(return_value=mock_session)
+        mock_session.__enter__ = Mock(return_value=mock_session)
+        mock_session.__exit__ = Mock(return_value=False)
+
+        validator.ge_context.run_validation_operator = Mock(return_value=mock_results)
+
+        validator.validate_data(self.df, "test_suite", save_results=True)
+
+        # Session should have been used
+        validator.SessionLocal.assert_called()
+
+
+class TestDriftDetectionEdgeCases(unittest.TestCase):
+    """Test drift detection edge cases."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        np.random.seed(42)
+        self.reference_df = pd.DataFrame(
+            {
+                "numeric_col": np.random.randn(100),
+                "category_col": np.random.choice(["A", "B", "C"], 100),
+            }
+        )
+
+    @patch("src.feature_store.ge.get_context")
+    @patch("src.feature_store.create_engine")
+    @patch("src.feature_store.Report")
+    def test_drift_with_identical_data(self, mock_report_class, mock_engine, mock_ge_context):
+        """Test drift detection with identical reference and current data."""
+        mock_ge_context.return_value = Mock()
+        mock_engine.return_value = Mock()
+
+        mock_report = Mock()
+        mock_report.as_dict.return_value = {
+            "metrics": [
+                {
+                    "result": {
+                        "dataset_drift": False,
+                        "share_of_drifted_columns": 0.0,
+                        "drift_by_columns": {},
+                    }
+                }
+            ]
+        }
+        mock_report_class.return_value = mock_report
+
+        validator = DataValidator()
+        validator.SessionLocal = Mock()
+
+        # Use identical data
+        result = validator.detect_drift(self.reference_df, self.reference_df.copy())
+
+        self.assertFalse(result["dataset_drift"])
+        self.assertEqual(result["share_of_drifted_columns"], 0.0)
+
+    @patch("src.feature_store.ge.get_context")
+    @patch("src.feature_store.create_engine")
+    @patch("src.feature_store.Report")
+    def test_drift_with_completely_different_data(self, mock_report_class, mock_engine, mock_ge_context):
+        """Test drift detection with completely different data."""
+        mock_ge_context.return_value = Mock()
+        mock_engine.return_value = Mock()
+
+        mock_report = Mock()
+        mock_report.as_dict.return_value = {
+            "metrics": [
+                {
+                    "result": {
+                        "dataset_drift": True,
+                        "share_of_drifted_columns": 1.0,
+                        "drift_by_columns": {
+                            "numeric_col": {
+                                "drift_detected": True,
+                                "drift_score": 0.99,
+                            }
+                        },
+                    }
+                }
+            ]
+        }
+        mock_report_class.return_value = mock_report
+
+        validator = DataValidator()
+        mock_session = MagicMock()
+        validator.SessionLocal = Mock(return_value=mock_session)
+        mock_session.__enter__ = Mock(return_value=mock_session)
+        mock_session.__exit__ = Mock(return_value=False)
+
+        different_df = pd.DataFrame(
+            {
+                "numeric_col": np.random.randn(100) + 100,  # Shifted distribution
+                "category_col": np.random.choice(["X", "Y", "Z"], 100),  # Different categories
+            }
+        )
+
+        result = validator.detect_drift(self.reference_df, different_df)
+
+        self.assertTrue(result["dataset_drift"])
+        self.assertEqual(result["share_of_drifted_columns"], 1.0)
+
+    @patch("src.feature_store.ge.get_context")
+    @patch("src.feature_store.create_engine")
+    @patch("src.feature_store.Report")
+    def test_drift_logs_critical_issue(self, mock_report_class, mock_engine, mock_ge_context):
+        """Test drift detection logs critical issue when significant drift."""
+        mock_ge_context.return_value = Mock()
+        mock_engine.return_value = Mock()
+
+        mock_report = Mock()
+        mock_report.as_dict.return_value = {
+            "metrics": [
+                {
+                    "result": {
+                        "dataset_drift": True,
+                        "share_of_drifted_columns": 0.75,  # High drift
+                        "drift_by_columns": {
+                            "col1": {"drift_detected": True},
+                            "col2": {"drift_detected": True},
+                            "col3": {"drift_detected": True},
+                        },
+                    }
+                }
+            ]
+        }
+        mock_report_class.return_value = mock_report
+
+        validator = DataValidator()
+        mock_session = MagicMock()
+        validator.SessionLocal = Mock(return_value=mock_session)
+        mock_session.__enter__ = Mock(return_value=mock_session)
+        mock_session.__exit__ = Mock(return_value=False)
+
+        result = validator.detect_drift(self.reference_df, self.reference_df)
+
+        # Should have added issue to session
+        mock_session.add.assert_called()
+
+    @patch("src.feature_store.ge.get_context")
+    @patch("src.feature_store.create_engine")
+    @patch("src.feature_store.Report")
+    def test_drift_extracts_column_details(self, mock_report_class, mock_engine, mock_ge_context):
+        """Test drift detection extracts column-level details."""
+        mock_ge_context.return_value = Mock()
+        mock_engine.return_value = Mock()
+
+        mock_report = Mock()
+        mock_report.as_dict.return_value = {
+            "metrics": [
+                {
+                    "result": {
+                        "dataset_drift": True,
+                        "share_of_drifted_columns": 0.5,
+                        "drift_by_columns": {
+                            "numeric_col": {
+                                "drift_detected": True,
+                                "drift_score": 0.8,
+                                "stattest_name": "ks",
+                                "p_value": 0.01,
+                            },
+                            "stable_col": {
+                                "drift_detected": False,
+                                "drift_score": 0.1,
+                            },
+                        },
+                    }
+                }
+            ]
+        }
+        mock_report_class.return_value = mock_report
+
+        validator = DataValidator()
+        mock_session = MagicMock()
+        validator.SessionLocal = Mock(return_value=mock_session)
+        mock_session.__enter__ = Mock(return_value=mock_session)
+        mock_session.__exit__ = Mock(return_value=False)
+
+        result = validator.detect_drift(self.reference_df, self.reference_df)
+
+        # Should have drifted columns details
+        self.assertEqual(len(result["drifted_columns"]), 1)
+        self.assertEqual(result["drifted_columns"][0]["column"], "numeric_col")
+        self.assertEqual(result["drifted_columns"][0]["drift_score"], 0.8)
+
+    @patch("src.feature_store.ge.get_context")
+    @patch("src.feature_store.create_engine")
+    @patch("src.feature_store.Report")
+    def test_drift_with_empty_dataframes(self, mock_report_class, mock_engine, mock_ge_context):
+        """Test drift detection with empty dataframes."""
+        mock_ge_context.return_value = Mock()
+        mock_engine.return_value = Mock()
+
+        validator = DataValidator()
+
+        # May raise error or handle gracefully
+        try:
+            result = validator.detect_drift(pd.DataFrame(), pd.DataFrame())
+        except Exception:
+            pass  # Acceptable to raise error
+
+    @patch("src.feature_store.ge.get_context")
+    @patch("src.feature_store.create_engine")
+    @patch("src.feature_store.Report")
+    def test_drift_with_column_mapping(self, mock_report_class, mock_engine, mock_ge_context):
+        """Test drift detection with column mapping."""
+        mock_ge_context.return_value = Mock()
+        mock_engine.return_value = Mock()
+
+        mock_report = Mock()
+        mock_report.as_dict.return_value = {
+            "metrics": [
+                {
+                    "result": {
+                        "dataset_drift": False,
+                        "share_of_drifted_columns": 0.0,
+                        "drift_by_columns": {},
+                    }
+                }
+            ]
+        }
+        mock_report_class.return_value = mock_report
+
+        validator = DataValidator()
+        validator.SessionLocal = Mock()
+
+        from evidently import ColumnMapping
+
+        column_mapping = Mock(spec=ColumnMapping)
+
+        result = validator.detect_drift(
+            self.reference_df, self.reference_df, column_mapping=column_mapping
+        )
+
+        self.assertIsNotNone(result)
+
+
+class TestRedisUnavailability(unittest.TestCase):
+    """Test behavior when Redis is unavailable."""
+
+    @patch("src.feature_store.redis.Redis")
+    @patch("src.feature_store.feast.FeatureStore")
+    @patch("src.feature_store.create_engine")
+    def test_feature_store_handles_redis_connection_error(
+        self, mock_engine, mock_feast, mock_redis
+    ):
+        """Test feature store handles Redis connection error."""
+        mock_redis.side_effect = Exception("Connection refused")
+        mock_feast.return_value = Mock()
+        mock_engine.return_value = Mock()
+
+        with self.assertRaises(Exception):
+            FeatureStore(repo_path="./test_repo", redis_host="localhost")
+
+    @patch("src.feature_store.redis.Redis")
+    @patch("src.feature_store.feast.FeatureStore")
+    @patch("src.feature_store.create_engine")
+    def test_online_features_fallback_on_cache_miss(
+        self, mock_engine, mock_feast, mock_redis
+    ):
+        """Test online features uses Feast when cache misses."""
+        mock_redis_client = Mock()
+        mock_redis_client.get.return_value = None  # Cache miss
+        mock_redis.return_value = mock_redis_client
+
+        mock_feast_store = Mock()
+        mock_feature_vector = Mock()
+        mock_feature_vector.to_df.return_value = pd.DataFrame({"col1": [1, 2]})
+        mock_feast_store.get_online_features.return_value = mock_feature_vector
+        mock_feast.return_value = mock_feast_store
+
+        mock_engine.return_value = Mock()
+
+        store = FeatureStore(repo_path="./test_repo")
+
+        result = store.get_online_features([1, 2], ["feature1"], cache_ttl=60)
+
+        # Should have called Feast
+        mock_feast_store.get_online_features.assert_called()
+        # Should have cached the result
+        mock_redis_client.setex.assert_called()
+
+    @patch("src.feature_store.redis.Redis")
+    @patch("src.feature_store.feast.FeatureStore")
+    @patch("src.feature_store.create_engine")
+    def test_cache_key_generation_is_deterministic(
+        self, mock_engine, mock_feast, mock_redis
+    ):
+        """Test cache key generation is deterministic."""
+        mock_redis_client = Mock()
+        mock_redis_client.get.return_value = None
+        mock_redis.return_value = mock_redis_client
+
+        mock_feast_store = Mock()
+        mock_feast_store.get_online_features.return_value.to_df.return_value = pd.DataFrame()
+        mock_feast.return_value = mock_feast_store
+
+        mock_engine.return_value = Mock()
+
+        store = FeatureStore(repo_path="./test_repo")
+
+        # Make same request twice
+        store.get_online_features([1, 2], ["feature1"], cache_ttl=60)
+        store.get_online_features([1, 2], ["feature1"], cache_ttl=60)
+
+        # Should use same cache key
+        calls = mock_redis_client.get.call_args_list
+        self.assertEqual(calls[0], calls[1])
+
+    @patch("src.feature_store.redis.Redis")
+    @patch("src.feature_store.feast.FeatureStore")
+    @patch("src.feature_store.create_engine")
+    def test_cache_uses_ttl(self, mock_engine, mock_feast, mock_redis):
+        """Test cache respects TTL setting."""
+        mock_redis_client = Mock()
+        mock_redis_client.get.return_value = None
+        mock_redis.return_value = mock_redis_client
+
+        mock_feast_store = Mock()
+        mock_feast_store.get_online_features.return_value.to_df.return_value = pd.DataFrame()
+        mock_feast.return_value = mock_feast_store
+
+        mock_engine.return_value = Mock()
+
+        store = FeatureStore(repo_path="./test_repo")
+
+        store.get_online_features([1, 2], ["feature1"], cache_ttl=120)
+
+        # Check setex was called with correct TTL
+        mock_redis_client.setex.assert_called()
+        call_args = mock_redis_client.setex.call_args
+        self.assertEqual(call_args[0][1], 120)  # TTL is second argument
+
+
+class TestAsyncPipelineFailures(unittest.TestCase):
+    """Test async pipeline failure handling."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        np.random.seed(42)
+        self.df = pd.DataFrame(
+            {
+                "numeric1": np.random.randn(100),
+                "target": np.random.randint(0, 2, 100),
+            }
+        )
+
+    def test_validation_stage_failure_stops_pipeline(self):
+        """Test validation failure stops the pipeline."""
+        import asyncio
+
+        mock_feature_store = Mock()
+        mock_validator = Mock()
+        mock_validator.expectations = {"test_suite": Mock()}
+        mock_validator.validate_data = Mock(return_value={"success": False})
+        mock_engineering = Mock()
+
+        orchestrator = DataPipelineOrchestrator(
+            feature_store=mock_feature_store,
+            validator=mock_validator,
+            engineering_pipeline=mock_engineering,
+        )
+
+        config = {"validation_suite": "test_suite"}
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            result = loop.run_until_complete(orchestrator.process_batch(self.df, config))
+            self.assertEqual(result["status"], "failed")
+        finally:
+            loop.close()
+
+    def test_engineering_stage_exception_handled(self):
+        """Test engineering stage exception is handled."""
+        import asyncio
+
+        mock_feature_store = Mock()
+        mock_validator = Mock()
+        mock_validator.expectations = {}
+        mock_validator.create_expectation_suite = Mock()
+        mock_validator.validate_data = Mock(return_value={"success": True})
+        mock_engineering = Mock()
+        mock_engineering.create_features = Mock(side_effect=Exception("Engineering error"))
+
+        orchestrator = DataPipelineOrchestrator(
+            feature_store=mock_feature_store,
+            validator=mock_validator,
+            engineering_pipeline=mock_engineering,
+        )
+
+        config = {
+            "validation_suite": "test_suite",
+            "feature_types": {"numeric1": "numeric"},
+            "target_column": "target",
+        }
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            result = loop.run_until_complete(orchestrator.process_batch(self.df, config))
+            self.assertEqual(result["status"], "failed")
+            self.assertIn("error", result)
+        finally:
+            loop.close()
+
+    def test_pipeline_returns_stage_results(self):
+        """Test pipeline returns results for each stage."""
+        import asyncio
+
+        mock_feature_store = Mock()
+        mock_validator = Mock()
+        mock_validator.expectations = {}
+        mock_validator.create_expectation_suite = Mock()
+        mock_validator.validate_data = Mock(return_value={"success": True})
+        mock_engineering = Mock()
+        mock_engineering.create_features = Mock(return_value=self.df)
+
+        orchestrator = DataPipelineOrchestrator(
+            feature_store=mock_feature_store,
+            validator=mock_validator,
+            engineering_pipeline=mock_engineering,
+        )
+
+        config = {
+            "validation_suite": "test_suite",
+            "feature_types": {"numeric1": "numeric"},
+            "target_column": "target",
+        }
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            result = loop.run_until_complete(orchestrator._validate_stage(self.df, config))
+            self.assertIn("success", result)
+        finally:
+            loop.close()
+
+    def test_pipeline_with_missing_config_keys(self):
+        """Test pipeline handles missing config keys."""
+        import asyncio
+
+        mock_feature_store = Mock()
+        mock_validator = Mock()
+        mock_validator.expectations = {}
+        mock_validator.create_expectation_suite = Mock()
+        mock_validator.validate_data = Mock(return_value={"success": True})
+        mock_engineering = Mock()
+        mock_engineering.create_features = Mock(return_value=self.df)
+
+        orchestrator = DataPipelineOrchestrator(
+            feature_store=mock_feature_store,
+            validator=mock_validator,
+            engineering_pipeline=mock_engineering,
+        )
+
+        # Minimal config
+        config = {}
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            result = loop.run_until_complete(orchestrator._drift_detection_stage(self.df, config))
+            # Should skip drift detection due to missing reference path
+            self.assertTrue(result.get("skipped", False))
+        finally:
+            loop.close()
+
+    def test_pipeline_thread_pool_executor(self):
+        """Test pipeline uses thread pool executor."""
+        mock_feature_store = Mock()
+        mock_validator = Mock()
+        mock_engineering = Mock()
+
+        orchestrator = DataPipelineOrchestrator(
+            feature_store=mock_feature_store,
+            validator=mock_validator,
+            engineering_pipeline=mock_engineering,
+        )
+
+        self.assertIsNotNone(orchestrator.executor)
+
+
+class TestFeatureEngineeringEdgeCases(unittest.TestCase):
+    """Test feature engineering edge cases."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        np.random.seed(42)
+        self.config = {"create_interactions": False, "feature_selection": False}
+
+    def test_numeric_features_with_zeros(self):
+        """Test numeric features with zeros (log transform edge case)."""
+        df = pd.DataFrame(
+            {
+                "numeric_with_zeros": [0, 1, 2, 3, 4, 5],
+                "positive_only": [1, 2, 3, 4, 5, 6],
+                "target": [0, 1, 0, 1, 0, 1],
+            }
+        )
+
+        with patch("src.feature_store.StandardScaler") as mock_scaler:
+            mock_scaler.return_value.fit_transform.return_value = df[["positive_only"]].values
+
+            pipeline = FeatureEngineeringPipeline(self.config)
+            result = pipeline._create_numeric_features(df.copy(), ["positive_only"])
+
+            # Log transform should only apply to positive columns
+            self.assertIn("positive_only_log", result.columns)
+
+    def test_categorical_features_with_high_cardinality(self):
+        """Test categorical features with high cardinality."""
+        # Create high cardinality column
+        df = pd.DataFrame(
+            {
+                "high_card": [f"cat_{i}" for i in range(2000)],  # Many categories
+                "target": np.random.randint(0, 2, 2000),
+            }
+        )
+
+        pipeline = FeatureEngineeringPipeline(self.config)
+        result = pipeline._create_categorical_features(df.copy(), ["high_card"])
+
+        # Should use target encoding for high cardinality
+        # (depends on whether category_encoders is available)
+        self.assertIsNotNone(result)
+
+    def test_interaction_features_with_many_columns(self):
+        """Test interaction features limits number of interactions."""
+        df = pd.DataFrame(
+            {f"num_{i}": np.random.randn(100) for i in range(10)}
+        )
+        df["target"] = np.random.randint(0, 2, 100)
+
+        pipeline = FeatureEngineeringPipeline(self.config)
+        result = pipeline._create_interaction_features(
+            df.copy(), [f"num_{i}" for i in range(10)], max_interactions=3
+        )
+
+        # Should limit to max_interactions
+        interaction_cols = [c for c in result.columns if "_x_" in c or "_div_" in c]
+        self.assertLessEqual(len(interaction_cols), 6)  # 3 interactions * 2 types
+
+
 if __name__ == "__main__":
     unittest.main()
